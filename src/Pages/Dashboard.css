@@ -1,0 +1,174 @@
+/* ---------------------------------------------
+   MAIN WRAPPER
+--------------------------------------------- */
+.dashboard-wrapper {
+  padding: 22px;
+  background: linear-gradient(135deg, #f5f7ff 0%, #eef0ff 100%);
+  min-height: 100vh;
+  color: #1a1a1a;
+}
+
+/* ---------------------------------------------
+   TITLES
+--------------------------------------------- */
+.dash-title {
+  font-size: 26px;
+  font-weight: 700;
+  color: #2b2d42;
+  margin: 0;
+}
+
+/* ---------------------------------------------
+   KPI CARDS
+--------------------------------------------- */
+.kpi-card {
+  border-radius: 16px !important;
+  background: #ffffff !important;
+  border: 1px solid rgba(180, 180, 255, 0.35);
+  box-shadow: 0 4px 16px rgba(120, 110, 255, 0.12);
+  transition: 0.25s ease-in-out;
+}
+
+.kpi-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 26px rgba(120, 110, 255, 0.26);
+}
+
+.kpi-card .ant-card-head-title {
+  font-weight: 700;
+  font-size: 15px;
+  background: linear-gradient(90deg, #4549a8, #7f8cff);
+  -webkit-background-clip: text;
+  color: transparent !important;
+}
+
+/* ---------------------------------------------
+   TIER BADGES
+--------------------------------------------- */
+.tier-badge {
+  padding: 4px 10px;
+  border-radius: 10px;
+  font-weight: 600;
+  color: #fff;
+  display: inline-block;
+}
+
+/* ---------------------------------------------
+   SEGMENT CARDS
+--------------------------------------------- */
+.segment-card {
+  margin-top: 25px;
+  border-radius: 14px !important;
+  border: 1px solid rgba(200, 200, 255, 0.35);
+  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.95) !important;
+  box-shadow: 0 4px 14px rgba(90, 80, 200, 0.12);
+}
+
+.segment-card:hover {
+  box-shadow: 0 6px 20px rgba(90, 80, 200, 0.18);
+}
+
+.segment-card .ant-card-head-title {
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: 0.3px;
+  background: linear-gradient(90deg, #2b2d42, #6c63ff);
+  -webkit-background-clip: text;
+  color: transparent !important;
+}
+
+/* ---------------------------------------------
+   TABLE STYLING
+--------------------------------------------- */
+.ant-table {
+  border-radius: 12px !important;
+}
+
+.ant-table-tbody > tr:hover > td {
+  background: rgba(115, 102, 255, 0.08) !important;
+  cursor: pointer;
+}
+
+/* smooth borders */
+.ant-table-container table > thead > tr:first-child th {
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+}
+
+/* ---------------------------------------------
+   SEARCH BAR
+--------------------------------------------- */
+.ant-input {
+  border-radius: 10px !important;
+  padding: 10px 14px !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+  box-shadow: 0 2px 8px rgba(100, 100, 255, 0.08);
+}
+
+.ant-input:focus {
+  border-color: #7366ff !important;
+  box-shadow: 0 0 0 2px rgba(115, 102, 255, 0.25);
+}
+
+/* ---------------------------------------------
+   MODAL
+--------------------------------------------- */
+.ant-modal-content {
+  border-radius: 16px !important;
+  padding: 22px !important;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.18);
+}
+
+.ant-modal-header {
+  border-radius: 16px 16px 0 0 !important;
+}
+
+.ant-modal-title {
+  font-size: 20px;
+  font-weight: 700;
+  background: linear-gradient(90deg, #2b2d42, #6c63ff);
+  -webkit-background-clip: text;
+  color: transparent !important;
+}
+
+/* JSON block inside modal */
+.json-block {
+  background: #f7f8ff;
+  padding: 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(120, 120, 200, 0.25);
+  font-size: 13px;
+  white-space: pre-wrap;
+}
+
+/* ---------------------------------------------
+   CHART WRAPPER
+--------------------------------------------- */
+.chart-container {
+  padding: 15px;
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 4px 12px rgba(120, 120, 255, 0.12);
+  margin-top: 12px;
+}
+
+/* ---------------------------------------------
+   ANIMATIONS
+--------------------------------------------- */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.kpi-card,
+.segment-card,
+.chart-container {
+  animation: fadeIn 0.4s ease;
+}
