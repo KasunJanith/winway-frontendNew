@@ -347,7 +347,7 @@ const Overview = () => {
             style={{
               height: "100%",
               borderRadius: 16,
-              boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+              boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
             }}
           >
             {splitData.length > 0 ? (
@@ -409,7 +409,7 @@ const Overview = () => {
             style={{
               height: "100%",
               borderRadius: 16,
-              boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+              boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
             }}
           >
             {agentAssignmentData.length > 0 ? (
@@ -502,7 +502,7 @@ const Overview = () => {
         loading={loading}
         style={{
           borderRadius: 16,
-          boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+          boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
         }}
       >
         <Table
@@ -549,7 +549,7 @@ const DashboardStatisticCard = ({
       style={{
         height: "100%",
         borderRadius: 16,
-        boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+        boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
       }}
       styles={{
         body: {

@@ -373,140 +373,230 @@ const SplitDownload = () => {
     }, 0);
   }, [splits]);
 
-  const columns = [
-    {
-      title: "#",
-      key: "index",
-      width: 65,
-      align: "center",
-      render: (_, __, index) => <Text type="secondary">{index + 1}</Text>,
-    },
-    {
-      title: "Lottery",
-      dataIndex: "lottery_name",
-      key: "lottery_name",
-      width: 250,
-      render: (value, record) => (
-        <Space>
+const columns = [
+  {
+    title: "#",
+    key: "index",
+    width: 45,
+    align: "center",
+    render: (_, __, index) => (
+      <Text type="secondary">{index + 1}</Text>
+    ),
+  },
+
+  {
+    title: "Lottery / Draw",
+    key: "lottery",
+    width: 240,
+    render: (_, record) => {
+      const code = normalizeLotteryCode(
+        record.lottery_code || record.lottery_name,
+      );
+
+      return (
+        <Space size={10}>
           <div
             style={{
               width: 40,
               height: 40,
+              flexShrink: 0,
               borderRadius: 10,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              background: agent === "JAYAWAY" ? "#f9f0ff" : "#e6fffb",
-              color: agent === "JAYAWAY" ? "#722ed1" : "#13c2c2",
+              background:
+                agent === "JAYAWAY" ? "#f9f0ff" : "#e6fffb",
+              color:
+                agent === "JAYAWAY" ? "#722ed1" : "#13c2c2",
               fontWeight: 700,
               textTransform: "uppercase",
             }}
           >
-            {normalizeLotteryCode(record.lottery_code || value)
-              .slice(0, 2)
-              .toUpperCase()}
+            {code.slice(0, 2).toUpperCase()}
           </div>
 
           <div>
-            <Text strong>{value || record.lottery_code || "Unknown"}</Text>
+            <Text strong style={{ display: "block" }}>
+              {record.lottery_name ||
+                record.lottery_code ||
+                "Unknown"}
+            </Text>
 
-            <div>
+            <Space size={6} style={{ marginTop: 3 }}>
               <Text
                 type="secondary"
                 style={{
-                  fontSize: 12,
+                  fontSize: 11,
                   textTransform: "uppercase",
                 }}
               >
-                {record.lottery_code || normalizeLotteryCode(value)}
+                {record.lottery_code || code}
               </Text>
-            </div>
+
+              <Tag
+                color={record.draw_number ? "blue" : "default"}
+                style={{
+                  margin: 0,
+                  fontSize: 11,
+                }}
+              >
+                {record.draw_number
+                  ? `Draw ${record.draw_number}`
+                  : "No draw"}
+              </Tag>
+            </Space>
           </div>
         </Space>
-      ),
+      );
     },
-    {
-      title: "Draw Number",
-      dataIndex: "draw_number",
-      key: "draw_number",
-      width: 150,
-      align: "center",
-      render: (value) =>
-        value ? (
-          <Tag color="blue" icon={<NumberOutlined />}>
-            {value}
-          </Tag>
-        ) : (
-          <Tag>No draw</Tag>
-        ),
-    },
-    {
-      title: "Start Serial",
-      dataIndex: "start_serial",
-      key: "start_serial",
-      width: 180,
-      render: (value) => <Text code>{value || "—"}</Text>,
-    },
-    {
-      title: "End Serial",
-      dataIndex: "end_serial",
-      key: "end_serial",
-      width: 180,
-      render: (value) => <Text code>{value || "—"}</Text>,
-    },
-    {
-      title: "Records",
-      dataIndex: "record_count",
-      key: "record_count",
-      width: 150,
-      align: "right",
-      render: (value) => (
-        <Text strong>{Number(value || 0).toLocaleString()}</Text>
-      ),
-    },
-    {
-      title: "File",
-      key: "filename",
-      width: 240,
-      render: (_, record) => (
-        <Text
-          ellipsis={{
-            tooltip: record.original_filename || record.filename,
+  },
+
+  {
+    title: "Serial Range",
+    key: "serialRange",
+    width: 230,
+    render: (_, record) => (
+      <div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
           }}
-          style={{ maxWidth: 210 }}
         >
-          {record.original_filename || record.filename || "Split file"}
-        </Text>
-      ),
-    },
-    {
-      title: "Download",
-      key: "download",
-      width: 150,
-      align: "center",
-      fixed: "right",
-      render: (_, record) => {
-        const fileKey =
-          record.filename ||
-          record.original_filename ||
-          `${record.lottery_code}-${record.draw_number}`;
-
-        const isDownloading = downloadingFile === fileKey;
-
-        return (
-          <Button
-            type="link"
-            icon={<DownloadOutlined />}
-            loading={isDownloading}
-            disabled={downloadingAll}
-            onClick={() => handleDownloadSingle(record)}
+          <Text
+            type="secondary"
+            style={{
+              width: 38,
+              fontSize: 10,
+              fontWeight: 600,
+            }}
           >
-            Download
-          </Button>
-        );
-      },
+            START
+          </Text>
+
+          <Text code>
+            {record.start_serial || "—"}
+          </Text>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginTop: 5,
+          }}
+        >
+          <Text
+            type="secondary"
+            style={{
+              width: 38,
+              fontSize: 10,
+              fontWeight: 600,
+            }}
+          >
+            END
+          </Text>
+
+          <Text code>
+            {record.end_serial || "—"}
+          </Text>
+        </div>
+      </div>
+    ),
+  },
+
+  {
+    title: "Records",
+    dataIndex: "record_count",
+    key: "record_count",
+    width: 120,
+    align: "right",
+    render: (value) => (
+      <Tag
+        color={agent === "JAYAWAY" ? "purple" : "cyan"}
+        style={{
+          margin: 0,
+          minWidth: 70,
+          textAlign: "center",
+          fontWeight: 600,
+        }}
+      >
+        {Number(value || 0).toLocaleString()}
+      </Tag>
+    ),
+  },
+
+  {
+    title: "File",
+    key: "filename",
+    width: 260,
+    render: (_, record) => {
+      const filename =
+        record.original_filename ||
+        record.filename ||
+        "Split file";
+
+      return (
+        <Space size={8}>
+          <DatabaseOutlined
+            style={{
+              color: "#8c8c8c",
+            }}
+          />
+
+          <Text
+            ellipsis={{
+              tooltip: filename,
+            }}
+            style={{
+              maxWidth: 210,
+            }}
+          >
+            {filename}
+          </Text>
+        </Space>
+      );
     },
-  ];
+  },
+
+  {
+    title: "",
+    key: "download",
+    width: 70,
+    align: "center",
+    fixed: "right",
+    render: (_, record) => {
+      const fileKey =
+        record.filename ||
+        record.original_filename ||
+        `${record.lottery_code}-${record.draw_number}`;
+
+      const isDownloading =
+        downloadingFile === fileKey;
+
+      return (
+        <Button
+          type="text"
+          shape="circle"
+          icon={<DownloadOutlined />}
+          loading={isDownloading}
+          disabled={downloadingAll}
+          onClick={() => handleDownloadSingle(record)}
+          style={{
+            color:
+              agent === "JAYAWAY"
+                ? "#722ed1"
+                : "#13c2c2",
+          }}
+        >
+          Download
+        </Button>
+      );
+    },
+  },
+];
 
   return (
     <>
@@ -519,7 +609,7 @@ const SplitDownload = () => {
           style={{
             marginBottom: 24,
             borderRadius: 16,
-            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
           }}
         >
           <Row gutter={[20, 20]} align="middle" justify="space-between">
@@ -586,7 +676,7 @@ const SplitDownload = () => {
               style={{
                 height: "100%",
                 borderRadius: 16,
-                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
               }}
             >
               <Statistic
@@ -604,7 +694,7 @@ const SplitDownload = () => {
               style={{
                 height: "100%",
                 borderRadius: 16,
-                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
               }}
             >
               <Statistic
@@ -622,7 +712,7 @@ const SplitDownload = () => {
               style={{
                 height: "100%",
                 borderRadius: 16,
-                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
               }}
             >
               <Statistic
@@ -640,7 +730,7 @@ const SplitDownload = () => {
               style={{
                 height: "100%",
                 borderRadius: 16,
-                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
               }}
             >
               <Statistic
@@ -688,7 +778,7 @@ const SplitDownload = () => {
           bordered={false}
           style={{
             borderRadius: 16,
-            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
           }}
         >
           <Table
@@ -703,7 +793,7 @@ const SplitDownload = () => {
             dataSource={splits}
             loading={loading}
             pagination={false}
-            scroll={{ x: 1350 }}
+         
             locale={{
               emptyText: (
                 <Empty

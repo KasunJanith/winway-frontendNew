@@ -674,7 +674,7 @@ function LoyaltyEmails() {
                   : "1px solid #f0f0f0",
 
                 boxShadow: !selectedTier
-                  ? "0 5px 5px rgba(22,119,255,0.25)"
+                  ? "0 5px 5px rgba(22,119,255,0.5)"
                   : "0 2px 14px rgba(0,0,0,0.05)",
 
                 transition: "all 0.25s ease",
@@ -749,7 +749,7 @@ function LoyaltyEmails() {
 
                       boxShadow:
                         selectedTier === tier
-                          ? "0 4px 12px rgba(22,119,255,0.25)"
+                          ? "0 4px 12px rgba(22,119,255,0.5)"
                           : "0 2px 8px rgba(0,0,0,0.05)",
 
                       transition: "all 0.25s ease",

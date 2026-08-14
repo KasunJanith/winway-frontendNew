@@ -423,7 +423,7 @@ const DashboardLayout = ({ activeTab, onTabChange, children, onLogout }) => {
                     color: "#fff",
                     marginTop: 10,
                     marginBottom: 0,
-                    textShadow: "0 2px 8px rgba(0,0,0,0.25)",
+                    textShadow: "0 2px 8px rgba(0,0,0,0.5)",
                   }}
                 >
                   WinWay
@@ -492,7 +492,7 @@ const DashboardLayout = ({ activeTab, onTabChange, children, onLogout }) => {
                 style={{
                   color: "#fff",
                   margin: 0,
-                  textShadow: "0 2px 8px rgba(0,0,0,0.25)",
+                  textShadow: "0 2px 8px rgba(0,0,0,0.5)",
                 }}
               >
                 {getPageTitle()}
@@ -682,7 +682,7 @@ const DashboardLayout = ({ activeTab, onTabChange, children, onLogout }) => {
                 height: 46,
                 borderRadius: 10,
                 fontWeight: 600,
-                boxShadow: "0 8px 20px rgba(255,77,79,0.25)",
+                boxShadow: "0 8px 20px rgba(255,77,79,0.5)",
               }}
             >
               Logout

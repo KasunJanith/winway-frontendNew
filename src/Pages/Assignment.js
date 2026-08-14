@@ -606,7 +606,7 @@ const Assignment = () => {
           style={{
             marginBottom: 24,
             borderRadius: 16,
-            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
           }}
         >
           <Row gutter={[20, 20]} align="middle" justify="space-between">
@@ -668,7 +668,7 @@ const Assignment = () => {
               style={{
                 height: "100%",
                 borderRadius: 16,
-                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
               }}
             >
               <Statistic
@@ -690,7 +690,7 @@ const Assignment = () => {
               style={{
                 height: "100%",
                 borderRadius: 16,
-                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
               }}
             >
               <Statistic
@@ -712,7 +712,7 @@ const Assignment = () => {
               style={{
                 height: "100%",
                 borderRadius: 16,
-                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
               }}
             >
               <Statistic
@@ -734,7 +734,7 @@ const Assignment = () => {
               style={{
                 height: "100%",
                 borderRadius: 16,
-                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
               }}
             >
               <Statistic
@@ -774,7 +774,7 @@ const Assignment = () => {
                 borderRadius: 16,
                 overflow: "hidden",
                 position: "relative",
-                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
               }}
               styles={{
                 body: {
@@ -880,7 +880,7 @@ const Assignment = () => {
           bordered={false}
           style={{
             borderRadius: 16,
-            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
           }}
           extra={
             data.length > 0 && (

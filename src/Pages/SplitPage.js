@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+
 import {
   Alert,
   Button,
@@ -19,17 +20,20 @@ import {
   Tag,
   Typography,
 } from "antd";
+
 import {
   CalendarOutlined,
   CheckCircleOutlined,
   DatabaseOutlined,
-  DownloadOutlined,
   ExclamationCircleOutlined,
   ScissorOutlined,
   TeamOutlined,
   UserOutlined,
   WarningOutlined,
+  DownOutlined,
+  UpOutlined,
 } from "@ant-design/icons";
+
 import dayjs from "dayjs";
 
 import {
@@ -43,6 +47,10 @@ import {
 
 const { Title, Text } = Typography;
 
+/* =========================================================
+   LOTTERY ORDER
+========================================================= */
+
 const LOTTERY_ORDER = [
   "ada",
   "dana",
@@ -54,12 +62,19 @@ const LOTTERY_ORDER = [
   "suba",
 ];
 
+/* =========================================================
+   LOTTERY NORMALIZER
+========================================================= */
+
 const normalizeLotteryCode = (value) => {
   const normalized = String(value || "")
     .trim()
     .toLowerCase();
 
-  if (normalized === "ada" || normalized.includes("ada sampatha")) {
+  if (
+    normalized === "ada" ||
+    normalized.includes("ada sampatha")
+  ) {
     return "ada";
   }
 
@@ -119,69 +134,134 @@ const normalizeLotteryCode = (value) => {
 
 const getSortedIndex = (value) => {
   const code = normalizeLotteryCode(value);
+
   const index = LOTTERY_ORDER.indexOf(code);
 
-  return index === -1 ? LOTTERY_ORDER.length : index;
+  return index === -1
+    ? LOTTERY_ORDER.length
+    : index;
 };
+
+/* =========================================================
+   COMPONENT
+========================================================= */
 
 const SplitPage = () => {
   const navigate = useNavigate();
 
-  const [selectedDate, setSelectedDate] = useState("");
-  const [agent, setAgent] = useState("JAYAWAY");
+  const [selectedDate, setSelectedDate] =
+    useState("");
 
-  const [sessionId, setSessionId] = useState(null);
-  const [lotteries, setLotteries] = useState([]);
-  const [assignedCounts, setAssignedCounts] = useState([]);
-  const [validation, setValidation] = useState(null);
+  const [agent, setAgent] =
+    useState("JAYAWAY");
 
-  const [loading, setLoading] = useState(true);
-  const [loadingAssignments, setLoadingAssignments] =
+  const [sessionId, setSessionId] =
+    useState(null);
+
+  const [lotteries, setLotteries] =
+    useState([]);
+
+  const [assignedCounts, setAssignedCounts] =
+    useState([]);
+
+  const [validation, setValidation] =
+    useState(null);
+
+  const [
+    showValidationTable,
+    setShowValidationTable,
+  ] = useState(false);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [
+    loadingAssignments,
+    setLoadingAssignments,
+  ] = useState(false);
+
+  const [splitting, setSplitting] =
     useState(false);
-  const [splitting, setSplitting] = useState(false);
-  const [error, setError] = useState("");
 
-  const [messageApi, messageContextHolder] = message.useMessage();
-  const [modalApi, modalContextHolder] = Modal.useModal();
+  const [error, setError] =
+    useState("");
+
+  const [
+    messageApi,
+    messageContextHolder,
+  ] = message.useMessage();
+
+  const [
+    modalApi,
+    modalContextHolder,
+  ] = Modal.useModal();
+
+  /* =========================================================
+     INITIAL LOAD
+  ========================================================= */
 
   useEffect(() => {
     loadLatestDate();
   }, []);
 
   useEffect(() => {
-    if (!selectedDate || !agent) return;
+    if (!selectedDate || !agent) {
+      return;
+    }
 
-    loadAssignedCounts(selectedDate, agent);
+    loadAssignedCounts(
+      selectedDate,
+      agent,
+    );
   }, [selectedDate, agent]);
+
+  /* =========================================================
+     LOAD LATEST DATE
+  ========================================================= */
 
   const loadLatestDate = async () => {
     setLoading(true);
     setError("");
 
     try {
-      const response = await getLatestOrderDate();
-      const latestDate = response.data?.date;
+      const response =
+        await getLatestOrderDate();
+
+      const latestDate =
+        response.data?.date;
 
       if (latestDate) {
         setSelectedDate(latestDate);
+
         await loadAllData(latestDate);
       } else {
-        const today = dayjs().format("YYYY-MM-DD");
+        const today =
+          dayjs().format("YYYY-MM-DD");
 
         setSelectedDate(today);
+
         await loadAllData(today);
       }
     } catch (err) {
-      console.error("Failed to load latest order date:", err);
+      console.error(
+        "Failed to load latest order date:",
+        err,
+      );
 
-      const today = dayjs().format("YYYY-MM-DD");
+      const today =
+        dayjs().format("YYYY-MM-DD");
 
       setSelectedDate(today);
+
       await loadAllData(today);
     } finally {
       setLoading(false);
     }
   };
+
+  /* =========================================================
+     LOAD ALL
+  ========================================================= */
 
   const loadAllData = async (date) => {
     if (!date) return;
@@ -199,107 +279,152 @@ const SplitPage = () => {
     }
   };
 
+  /* =========================================================
+     LOAD SESSION
+  ========================================================= */
+
   const loadSession = async (date) => {
     try {
-      const sessionResponse = await getSessionByDate(date);
+      const sessionResponse =
+        await getSessionByDate(date);
+
       const foundSessionId =
         sessionResponse.data?.session_id;
 
       if (!foundSessionId) {
         setSessionId(null);
         setLotteries([]);
+
         return;
       }
 
       setSessionId(foundSessionId);
 
       const lotteryResponse =
-        await getSessionLotteries(foundSessionId);
+        await getSessionLotteries(
+          foundSessionId,
+        );
 
-      const lotteryData = Array.isArray(
-        lotteryResponse.data,
-      )
-        ? lotteryResponse.data
-        : [];
+      const lotteryData =
+        Array.isArray(
+          lotteryResponse.data,
+        )
+          ? lotteryResponse.data
+          : [];
 
-      const sortedLotteries = [...lotteryData].sort(
-        (a, b) => {
-          const valueA =
-            a.lottery_code || a.lottery_name;
+      const sortedLotteries = [
+        ...lotteryData,
+      ].sort((a, b) => {
+        const valueA =
+          a.lottery_code ||
+          a.lottery_name;
 
-          const valueB =
-            b.lottery_code || b.lottery_name;
+        const valueB =
+          b.lottery_code ||
+          b.lottery_name;
 
-          return (
-            getSortedIndex(valueA) -
-            getSortedIndex(valueB)
-          );
-        },
+        return (
+          getSortedIndex(valueA) -
+          getSortedIndex(valueB)
+        );
+      });
+
+      setLotteries(
+        sortedLotteries,
       );
-
-      setLotteries(sortedLotteries);
     } catch (err) {
-      console.error("Failed to load upload session:", err);
+      console.error(
+        "Failed to load upload session:",
+        err,
+      );
 
       setSessionId(null);
       setLotteries([]);
     }
   };
 
-  const loadValidation = async (date) => {
-    try {
-      const response = await validateUpload(date);
+  /* =========================================================
+     LOAD VALIDATION
+  ========================================================= */
 
-      setValidation(response.data || null);
+  const loadValidation = async (
+    date,
+  ) => {
+    try {
+      const response =
+        await validateUpload(date);
+
+      setValidation(
+        response.data || null,
+      );
     } catch (err) {
-      console.error("Failed to validate upload:", err);
+      console.error(
+        "Failed to validate upload:",
+        err,
+      );
 
       setValidation(null);
     }
   };
 
+  /* =========================================================
+     LOAD ASSIGNED COUNTS
+  ========================================================= */
+
   const loadAssignedCounts = async (
     date,
     agentName,
   ) => {
-    if (!date || !agentName) return;
+    if (!date || !agentName) {
+      return;
+    }
 
     setLoadingAssignments(true);
 
     try {
-      const response = await getAssignedCounts(
-        agentName,
-        date,
-      );
+      const response =
+        await getAssignedCounts(
+          agentName,
+          date,
+        );
 
-      const assignmentData = Array.isArray(
-        response.data,
-      )
-        ? response.data
-        : [];
+      const assignmentData =
+        Array.isArray(response.data)
+          ? response.data
+          : [];
 
       const sortedAssignments = [
         ...assignmentData,
       ].sort(
         (a, b) =>
           getSortedIndex(
-            a.lottery_code || a.lottery_name,
+            a.lottery_code ||
+              a.lottery_name,
           ) -
           getSortedIndex(
-            b.lottery_code || b.lottery_name,
+            b.lottery_code ||
+              b.lottery_name,
           ),
       );
 
       setAssignedCounts(
-        sortedAssignments.map((item) => ({
-          ...item,
-          available_quantity: Number(
-            item.available_quantity || 0,
-          ),
-          assigned_count: Number(
-            item.assigned_count || 0,
-          ),
-        })),
+        sortedAssignments.map(
+          (item) => ({
+            ...item,
+
+            available_quantity:
+              Number(
+                item.available_quantity ||
+                  0,
+              ),
+
+            assigned_count:
+              Number(
+                item.assigned_count ||
+                  0,
+              ),
+          }),
+        ),
       );
     } catch (err) {
       console.error(
@@ -313,123 +438,218 @@ const SplitPage = () => {
     }
   };
 
-  const handleDateChange = async (date) => {
+  /* =========================================================
+     DATE CHANGE
+  ========================================================= */
+
+  const handleDateChange = async (
+    date,
+  ) => {
     if (!date) return;
 
-    const formattedDate = date.format("YYYY-MM-DD");
+    const formattedDate =
+      date.format("YYYY-MM-DD");
 
-    setSelectedDate(formattedDate);
+    setSelectedDate(
+      formattedDate,
+    );
+
     setSessionId(null);
     setLotteries([]);
     setAssignedCounts([]);
     setValidation(null);
     setError("");
 
-    await loadAllData(formattedDate);
-    await loadAssignedCounts(formattedDate, agent);
+    await loadAllData(
+      formattedDate,
+    );
+
+    await loadAssignedCounts(
+      formattedDate,
+      agent,
+    );
   };
 
-  const getMismatchInfo = (lottery) => {
-    if (!validation?.mismatches?.length) {
+  /* =========================================================
+     VALIDATION HELPERS
+  ========================================================= */
+
+  const getMismatchInfo = (
+    lottery,
+  ) => {
+    if (
+      !validation?.mismatches
+        ?.length
+    ) {
       return null;
     }
 
-    const targetCode = normalizeLotteryCode(
-      lottery.lottery_code || lottery.lottery_name,
-    );
+    const targetCode =
+      normalizeLotteryCode(
+        lottery.lottery_code ||
+          lottery.lottery_name,
+      );
 
     return (
-      validation.mismatches.find((item) => {
-        const mismatchCode = normalizeLotteryCode(
-          item.lottery_code || item.lottery_name,
-        );
+      validation.mismatches.find(
+        (item) => {
+          const mismatchCode =
+            normalizeLotteryCode(
+              item.lottery_code ||
+                item.lottery_name,
+            );
 
-        return mismatchCode === targetCode;
-      }) || null
+          return (
+            mismatchCode ===
+            targetCode
+          );
+        },
+      ) || null
     );
   };
 
-  const getMissingInfo = (lottery) => {
-    if (!validation?.missing_lotteries?.length) {
+  const getMissingInfo = (
+    lottery,
+  ) => {
+    if (
+      !validation
+        ?.missing_lotteries
+        ?.length
+    ) {
       return null;
     }
 
-    const targetCode = normalizeLotteryCode(
-      lottery.lottery_code || lottery.lottery_name,
-    );
+    const targetCode =
+      normalizeLotteryCode(
+        lottery.lottery_code ||
+          lottery.lottery_name,
+      );
 
     return (
-      validation.missing_lotteries.find((item) => {
-        const missingCode = normalizeLotteryCode(
-          item.lottery_code || item.lottery_name,
-        );
+      validation.missing_lotteries.find(
+        (item) => {
+          const missingCode =
+            normalizeLotteryCode(
+              item.lottery_code ||
+                item.lottery_name,
+            );
 
-        return missingCode === targetCode;
-      }) || null
+          return (
+            missingCode ===
+            targetCode
+          );
+        },
+      ) || null
     );
   };
 
-  const getAssignmentInfo = (lottery) => {
-    const targetCode = normalizeLotteryCode(
-      lottery.lottery_code || lottery.lottery_name,
-    );
+  const getAssignmentInfo = (
+    lottery,
+  ) => {
+    const targetCode =
+      normalizeLotteryCode(
+        lottery.lottery_code ||
+          lottery.lottery_name,
+      );
 
     return (
-      assignedCounts.find((item) => {
-        const assignedCode = normalizeLotteryCode(
-          item.lottery_code || item.lottery_name,
-        );
+      assignedCounts.find(
+        (item) => {
+          const assignedCode =
+            normalizeLotteryCode(
+              item.lottery_code ||
+                item.lottery_name,
+            );
 
-        return assignedCode === targetCode;
-      }) || null
+          return (
+            assignedCode ===
+            targetCode
+          );
+        },
+      ) || null
     );
   };
 
-  const totalUploadedRecords = useMemo(() => {
-    return lotteries.reduce(
-      (total, item) =>
-        total + Number(item.record_count || 0),
-      0,
-    );
-  }, [lotteries]);
+  /* =========================================================
+     TOTALS
+  ========================================================= */
 
-  const totalAvailableQuantity = useMemo(() => {
-    return assignedCounts.reduce(
-      (total, item) =>
-        total +
-        Number(item.available_quantity || 0),
-      0,
-    );
-  }, [assignedCounts]);
+  const totalUploadedRecords =
+    useMemo(() => {
+      return lotteries.reduce(
+        (total, item) =>
+          total +
+          Number(
+            item.record_count || 0,
+          ),
+        0,
+      );
+    }, [lotteries]);
 
-  const totalAssignedToAgent = useMemo(() => {
-    return assignedCounts.reduce(
-      (total, item) =>
-        total + Number(item.assigned_count || 0),
-      0,
-    );
-  }, [assignedCounts]);
+  const totalAvailableQuantity =
+    useMemo(() => {
+      return assignedCounts.reduce(
+        (total, item) =>
+          total +
+          Number(
+            item.available_quantity ||
+              0,
+          ),
+        0,
+      );
+    }, [assignedCounts]);
 
-  const assignedLotteryCount = useMemo(() => {
-    return assignedCounts.filter(
-      (item) => Number(item.assigned_count || 0) > 0,
-    ).length;
-  }, [assignedCounts]);
+  const totalAssignedToAgent =
+    useMemo(() => {
+      return assignedCounts.reduce(
+        (total, item) =>
+          total +
+          Number(
+            item.assigned_count ||
+              0,
+          ),
+        0,
+      );
+    }, [assignedCounts]);
+
+  const assignedLotteryCount =
+    useMemo(() => {
+      return assignedCounts.filter(
+        (item) =>
+          Number(
+            item.assigned_count || 0,
+          ) > 0,
+      ).length;
+    }, [assignedCounts]);
 
   const mismatchCount =
-    validation?.mismatches?.length || 0;
+    validation?.mismatches?.length ||
+    0;
 
   const missingCount =
-    validation?.missing_lotteries?.length || 0;
+    validation
+      ?.missing_lotteries
+      ?.length || 0;
 
   const extraCount =
-    validation?.extra_lotteries?.length || 0;
+    validation?.extra_lotteries
+      ?.length || 0;
+
+  /* =========================================================
+     CAN SPLIT
+  ========================================================= */
 
   const canSplit =
     Boolean(sessionId) &&
-    Boolean(validation?.is_valid) &&
+    Boolean(
+      validation?.is_valid,
+    ) &&
     assignedCounts.length > 0 &&
     totalAssignedToAgent > 0;
+
+  /* =========================================================
+     SPLIT
+  ========================================================= */
 
   const performSplit = async () => {
     setSplitting(true);
@@ -438,7 +658,8 @@ const SplitPage = () => {
       await splitForAgent({
         session_id: sessionId,
         agent_name: agent,
-        assignment_date: selectedDate,
+        assignment_date:
+          selectedDate,
       });
 
       messageApi.success(
@@ -447,14 +668,22 @@ const SplitPage = () => {
 
       navigate("/download");
     } catch (err) {
-      console.error("Split failed:", err);
+      console.error(
+        "Split failed:",
+        err,
+      );
 
       const errorMessage =
-        err.response?.data?.detail ||
-        err.response?.data?.message ||
+        err.response?.data
+          ?.detail ||
+        err.response?.data
+          ?.message ||
         "Split failed. Please try again.";
 
-      messageApi.error(errorMessage);
+      messageApi.error(
+        errorMessage,
+      );
+
       throw err;
     } finally {
       setSplitting(false);
@@ -466,41 +695,64 @@ const SplitPage = () => {
       messageApi.warning(
         "No uploaded archive exists for this date.",
       );
+
       return;
     }
 
-    if (!validation?.is_valid) {
+    if (
+      !validation?.is_valid
+    ) {
       messageApi.error(
         "The archive contains validation errors. Fix the order quantities or upload the correct archive first.",
       );
+
       return;
     }
 
-    if (!assignedCounts.length) {
+    if (
+      !assignedCounts.length
+    ) {
       messageApi.warning(
         `No assignments were found for ${agent}.`,
       );
+
       return;
     }
 
-    if (totalAssignedToAgent <= 0) {
+    if (
+      totalAssignedToAgent <= 0
+    ) {
       messageApi.warning(
         `No ticket quantities are assigned to ${agent}.`,
       );
+
       return;
     }
 
     modalApi.confirm({
       title: `Split DBF files for ${agent}?`,
+
       icon: (
         <ScissorOutlined
-          style={{ color: "#722ed1" }}
+          style={{
+            color:
+              agent ===
+              "JAYAWAY"
+                ? "#722ed1"
+                : "#13c2c2",
+          }}
         />
       ),
+
       centered: true,
       width: 520,
+
       content: (
-        <div style={{ marginTop: 16 }}>
+        <div
+          style={{
+            marginTop: 16,
+          }}
+        >
           <Descriptions
             bordered
             size="small"
@@ -509,7 +761,8 @@ const SplitPage = () => {
             <Descriptions.Item label="Agent">
               <Tag
                 color={
-                  agent === "JAYAWAY"
+                  agent ===
+                  "JAYAWAY"
                     ? "purple"
                     : "cyan"
                 }
@@ -520,7 +773,9 @@ const SplitPage = () => {
 
             <Descriptions.Item label="Date">
               <Text strong>
-                {dayjs(selectedDate).format(
+                {dayjs(
+                  selectedDate,
+                ).format(
                   "DD MMMM YYYY",
                 )}
               </Text>
@@ -528,7 +783,9 @@ const SplitPage = () => {
 
             <Descriptions.Item label="Lotteries">
               <Text strong>
-                {assignedLotteryCount}
+                {
+                  assignedLotteryCount
+                }
               </Text>
             </Descriptions.Item>
 
@@ -543,169 +800,247 @@ const SplitPage = () => {
             type="info"
             showIcon
             message="The generated files will be available on the download page."
-            style={{ marginTop: 16 }}
+            style={{
+              marginTop: 16,
+              borderRadius: 10,
+            }}
           />
         </div>
       ),
+
       okText: "Split Files",
       cancelText: "Cancel",
+
       onOk: async () => {
         await performSplit();
       },
     });
   };
 
+  /* =========================================================
+     UPLOADED TABLE COLUMNS
+  ========================================================= */
+
   const uploadedColumns = [
     {
       title: "#",
       key: "index",
-      width: 65,
+      width: 45,
       align: "center",
-      render: (_, __, index) => (
-        <Text type="secondary">{index + 1}</Text>
-      ),
-    },
-    {
-      title: "Ticket",
-      dataIndex: "lottery_name",
-      key: "lottery_name",
-      width: 230,
-      render: (value, record) => (
-        <Space>
-          <div
-            style={{
-              width: 40,
-              height: 40,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: 10,
-              background: "#e6f4ff",
-              color: "#1677ff",
-              fontWeight: 700,
-              textTransform: "uppercase",
-            }}
-          >
-            {normalizeLotteryCode(
-              record.lottery_code || value,
-            )
-              .slice(0, 2)
-              .toUpperCase()}
-          </div>
 
-          <div>
-            <Text strong>
-              {value ||
-                record.lottery_code ||
-                "Unknown"}
-            </Text>
-
-            <div>
-              <Text
-                type="secondary"
-                style={{
-                  fontSize: 12,
-                  textTransform: "uppercase",
-                }}
-              >
-                {normalizeLotteryCode(
-                  record.lottery_code || value,
-                )}
-              </Text>
-            </div>
-          </div>
-        </Space>
-      ),
-    },
-    {
-      title: "Draw",
-      dataIndex: "draw_number",
-      key: "draw_number",
-      width: 130,
-      align: "center",
-      render: (value) =>
-        value ? (
-          <Tag color="blue">{value}</Tag>
-        ) : (
-          <Tag>No draw</Tag>
-        ),
-    },
-    {
-      title: "Uploaded Records",
-      dataIndex: "record_count",
-      key: "record_count",
-      width: 170,
-      align: "right",
-      render: (value) => (
-        <Text strong>
-          {Number(value || 0).toLocaleString()}
+      render: (
+        _,
+        __,
+        index,
+      ) => (
+        <Text type="secondary">
+          {index + 1}
         </Text>
       ),
     },
+
     {
-      title: "Ordered Quantity",
-      key: "orderedQuantity",
-      width: 170,
+      title: "Ticket / Draw",
+      key: "ticket",
+      width: 240,
+
+      render: (_, record) => {
+        const code =
+          normalizeLotteryCode(
+            record.lottery_code ||
+              record.lottery_name,
+          );
+
+        return (
+          <Space size={10}>
+            <div
+              className="ticket-code-box"
+            >
+              {code
+                .slice(0, 2)
+                .toUpperCase()}
+            </div>
+
+            <div>
+              <Text
+                strong
+                style={{
+                  display: "block",
+                }}
+              >
+                {record.lottery_name ||
+                  record.lottery_code ||
+                  "Unknown"}
+              </Text>
+
+              <Space
+                size={6}
+                style={{
+                  marginTop: 3,
+                }}
+              >
+                <Text
+                  type="secondary"
+                  style={{
+                    fontSize: 11,
+                    textTransform:
+                      "uppercase",
+                  }}
+                >
+                  {code}
+                </Text>
+
+                <Tag
+                  color={
+                    record.draw_number
+                      ? "blue"
+                      : "default"
+                  }
+                  style={{
+                    margin: 0,
+                    fontSize: 11,
+                  }}
+                >
+                  {record.draw_number
+                    ? `Draw ${record.draw_number}`
+                    : "No draw"}
+                </Tag>
+              </Space>
+            </div>
+          </Space>
+        );
+      },
+    },
+
+    {
+      title: "Uploaded",
+      dataIndex:
+        "record_count",
+      key: "record_count",
+      width: 110,
       align: "right",
+
+      render: (value) => (
+        <Text strong>
+          {Number(
+            value || 0,
+          ).toLocaleString()}
+        </Text>
+      ),
+    },
+
+    {
+      title: "Ordered",
+      key: "orderedQuantity",
+      width: 110,
+      align: "right",
+
       render: (_, record) => {
         const assignment =
-          getAssignmentInfo(record);
+          getAssignmentInfo(
+            record,
+          );
 
-        const availableQuantity = Number(
-          assignment?.available_quantity || 0,
-        );
+        const availableQuantity =
+          Number(
+            assignment?.available_quantity ||
+              0,
+          );
 
-        return availableQuantity > 0 ? (
+        return availableQuantity >
+          0 ? (
           <Text strong>
             {availableQuantity.toLocaleString()}
           </Text>
         ) : (
-          <Text type="secondary">—</Text>
+          <Text type="secondary">
+            —
+          </Text>
         );
       },
     },
+
     {
-      title: "Start Serial",
-      dataIndex: "start_serial",
-      key: "start_serial",
-      width: 170,
-      render: (value) => (
-        <Text code>{value || "—"}</Text>
+      title: "Serial Range",
+      key: "serialRange",
+      width: 240,
+
+      render: (_, record) => (
+        <div className="serial-range">
+          <div>
+            <Text
+              type="secondary"
+              className="serial-label"
+            >
+              START
+            </Text>
+
+            <Text code>
+              {record.start_serial ||
+                "—"}
+            </Text>
+          </div>
+
+          <div
+            style={{
+              marginTop: 5,
+            }}
+          >
+            <Text
+              type="secondary"
+              className="serial-label"
+            >
+              END
+            </Text>
+
+            <Text code>
+              {record.end_serial ||
+                "—"}
+            </Text>
+          </div>
+        </div>
       ),
     },
+
     {
-      title: "End Serial",
-      dataIndex: "end_serial",
-      key: "end_serial",
-      width: 170,
-      render: (value) => (
-        <Text code>{value || "—"}</Text>
-      ),
-    },
-    {
-      title: "Validation Status",
+      title: "Status",
       key: "validationStatus",
-      width: 190,
+      width: 150,
       align: "center",
+
       render: (_, record) => {
-        const mismatch = getMismatchInfo(record);
-        const missing = getMissingInfo(record);
+        const mismatch =
+          getMismatchInfo(
+            record,
+          );
+
+        const missing =
+          getMissingInfo(record);
+
         const assignment =
-          getAssignmentInfo(record);
+          getAssignmentInfo(
+            record,
+          );
 
-        const uploadedRecords = Number(
-          record.record_count || 0,
-        );
+        const uploadedRecords =
+          Number(
+            record.record_count ||
+              0,
+          );
 
-        const orderedQuantity = Number(
-          assignment?.available_quantity || 0,
-        );
+        const orderedQuantity =
+          Number(
+            assignment?.available_quantity ||
+              0,
+          );
 
         if (missing) {
           return (
             <Tag
               color="error"
-              icon={<ExclamationCircleOutlined />}
+              icon={
+                <ExclamationCircleOutlined />
+              }
             >
               Missing
             </Tag>
@@ -713,32 +1048,38 @@ const SplitPage = () => {
         }
 
         if (mismatch) {
-          const difference = Number(
-            mismatch.difference ??
-              uploadedRecords - orderedQuantity,
-          );
+          const difference =
+            Number(
+              mismatch.difference ??
+                uploadedRecords -
+                  orderedQuantity,
+            );
 
           return (
             <Tag
               color="error"
-              icon={<ExclamationCircleOutlined />}
+              icon={
+                <ExclamationCircleOutlined />
+              }
             >
-              Mismatch{" "}
               {difference > 0
-                ? `+${difference}`
-                : difference}
+                ? `Mismatch +${difference}`
+                : `Mismatch ${difference}`}
             </Tag>
           );
         }
 
         if (
           orderedQuantity > 0 &&
-          uploadedRecords === orderedQuantity
+          uploadedRecords ===
+            orderedQuantity
         ) {
           return (
             <Tag
               color="success"
-              icon={<CheckCircleOutlined />}
+              icon={
+                <CheckCircleOutlined />
+              }
             >
               Match
             </Tag>
@@ -747,145 +1088,206 @@ const SplitPage = () => {
 
         return (
           <Tag color="warning">
-            No order data
+            No Order
           </Tag>
         );
       },
     },
   ];
 
+  /* =========================================================
+     ASSIGNMENT TABLE COLUMNS
+  ========================================================= */
+
   const assignmentColumns = [
     {
       title: "#",
       key: "index",
-      width: 65,
+      width: 45,
       align: "center",
-      render: (_, __, index) => (
-        <Text type="secondary">{index + 1}</Text>
-      ),
-    },
-    {
-      title: "Ticket",
-      dataIndex: "lottery_name",
-      key: "lottery_name",
-      width: 250,
-      render: (value, record) => (
-        <Space>
-          <div
-            style={{
-              width: 40,
-              height: 40,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              borderRadius: 10,
-              background:
-                agent === "JAYAWAY"
-                  ? "#f9f0ff"
-                  : "#e6fffb",
-              color:
-                agent === "JAYAWAY"
-                  ? "#722ed1"
-                  : "#13c2c2",
-              fontWeight: 700,
-              textTransform: "uppercase",
-            }}
-          >
-            {normalizeLotteryCode(
-              record.lottery_code || value,
-            )
-              .slice(0, 2)
-              .toUpperCase()}
-          </div>
 
-          <div>
-            <Text strong>
-              {value ||
-                record.lottery_code ||
-                "Unknown"}
-            </Text>
-
-            <div>
-              <Text
-                type="secondary"
-                style={{
-                  fontSize: 12,
-                  textTransform: "uppercase",
-                }}
-              >
-                {record.lottery_code}
-              </Text>
-            </div>
-          </div>
-        </Space>
-      ),
-    },
-    {
-      title: "Draw Number",
-      dataIndex: "draw_number",
-      key: "draw_number",
-      width: 150,
-      align: "center",
-      render: (value) =>
-        value ? (
-          <Tag color="blue">{value}</Tag>
-        ) : (
-          <Tag>No draw</Tag>
-        ),
-    },
-    {
-      title: "Available Quantity",
-      dataIndex: "available_quantity",
-      key: "available_quantity",
-      width: 190,
-      align: "right",
-      render: (value) => (
-        <Text>
-          {Number(value || 0).toLocaleString()}
+      render: (
+        _,
+        __,
+        index,
+      ) => (
+        <Text type="secondary">
+          {index + 1}
         </Text>
       ),
     },
+
+    {
+      title: "Ticket / Draw",
+      key: "ticket",
+      width: 250,
+
+      render: (_, record) => {
+        const code =
+          normalizeLotteryCode(
+            record.lottery_code ||
+              record.lottery_name,
+          );
+
+        return (
+          <Space size={10}>
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                flexShrink: 0,
+                display: "flex",
+                alignItems:
+                  "center",
+                justifyContent:
+                  "center",
+                borderRadius: 10,
+
+                background:
+                  agent ===
+                  "JAYAWAY"
+                    ? "#f9f0ff"
+                    : "#e6fffb",
+
+                color:
+                  agent ===
+                  "JAYAWAY"
+                    ? "#722ed1"
+                    : "#13c2c2",
+
+                fontWeight: 700,
+              }}
+            >
+              {code
+                .slice(0, 2)
+                .toUpperCase()}
+            </div>
+
+            <div>
+              <Text
+                strong
+                style={{
+                  display: "block",
+                }}
+              >
+                {record.lottery_name ||
+                  record.lottery_code ||
+                  "Unknown"}
+              </Text>
+
+              <Space
+                size={6}
+                style={{
+                  marginTop: 3,
+                }}
+              >
+                <Text
+                  type="secondary"
+                  style={{
+                    fontSize: 11,
+                    textTransform:
+                      "uppercase",
+                  }}
+                >
+                  {code}
+                </Text>
+
+                <Tag
+                  color="blue"
+                  style={{
+                    margin: 0,
+                    fontSize: 11,
+                  }}
+                >
+                  {record.draw_number
+                    ? `Draw ${record.draw_number}`
+                    : "No draw"}
+                </Tag>
+              </Space>
+            </div>
+          </Space>
+        );
+      },
+    },
+
+    {
+      title: "Available",
+      dataIndex:
+        "available_quantity",
+      key: "available_quantity",
+      width: 130,
+      align: "right",
+
+      render: (value) => (
+        <Text strong>
+          {Number(
+            value || 0,
+          ).toLocaleString()}
+        </Text>
+      ),
+    },
+
     {
       title: `Assigned to ${agent}`,
-      dataIndex: "assigned_count",
+      dataIndex:
+        "assigned_count",
       key: "assigned_count",
-      width: 210,
+      width: 160,
       align: "right",
-      render: (value) => {
-        const numericValue = Number(value || 0);
 
-        return numericValue > 0 ? (
+      render: (value) => {
+        const numericValue =
+          Number(value || 0);
+
+        return numericValue >
+          0 ? (
           <Tag
             color={
-              agent === "JAYAWAY"
+              agent ===
+              "JAYAWAY"
                 ? "purple"
                 : "cyan"
             }
+            style={{
+              minWidth: 70,
+              textAlign: "center",
+              fontWeight: 600,
+            }}
           >
             {numericValue.toLocaleString()}
           </Tag>
         ) : (
-          <Tag>Not assigned</Tag>
+          <Tag>
+            Not assigned
+          </Tag>
         );
       },
     },
-    {
-      title: "Percentage",
-      key: "percentage",
-      width: 230,
-      render: (_, record) => {
-        const available = Number(
-          record.available_quantity || 0,
-        );
 
-        const assigned = Number(
-          record.assigned_count || 0,
-        );
+    {
+      title: "Allocation",
+      key: "percentage",
+      width: 220,
+
+      render: (_, record) => {
+        const available =
+          Number(
+            record.available_quantity ||
+              0,
+          );
+
+        const assigned =
+          Number(
+            record.assigned_count ||
+              0,
+          );
 
         const percentage =
           available > 0
             ? Math.min(
-                (assigned / available) * 100,
+                (assigned /
+                  available) *
+                  100,
                 100,
               )
             : 0;
@@ -893,11 +1295,14 @@ const SplitPage = () => {
         return (
           <Progress
             percent={Number(
-              percentage.toFixed(1),
+              percentage.toFixed(
+                1,
+              ),
             )}
             size="small"
             strokeColor={
-              agent === "JAYAWAY"
+              agent ===
+              "JAYAWAY"
                 ? "#722ed1"
                 : "#13c2c2"
             }
@@ -907,22 +1312,23 @@ const SplitPage = () => {
     },
   ];
 
+  /* =========================================================
+     RENDER
+  ========================================================= */
+
   return (
     <>
       {messageContextHolder}
       {modalContextHolder}
 
-      <div
+      <div className="split-page">
+        {/* =====================================================
+            HEADER
+        ====================================================== */}
 
-      >
         <Card
+          className="split-header-card"
           bordered={false}
-          style={{
-            marginBottom: 24,
-            borderRadius: 16,
-            boxShadow:
-              "0 4px 16px rgba(0, 0, 0, 0.04)",
-          }}
         >
           <Row
             gutter={[20, 20]}
@@ -930,14 +1336,33 @@ const SplitPage = () => {
             justify="space-between"
           >
             <Col>
-              <Title level={2} style={{ margin: 0 }}>
-                Split DBF Files
-              </Title>
+              <Space
+                size={14}
+                align="center"
+              >
+                <div className="page-icon">
+                  <ScissorOutlined />
+                </div>
 
-              <Text type="secondary">
-                Validate uploaded DBF records and
-                generate agent-specific files.
-              </Text>
+                <div>
+                  <Title
+                    level={2}
+                    style={{
+                      margin: 0,
+                    }}
+                  >
+                    Split DBF Files
+                  </Title>
+
+                  <Text type="secondary">
+                    Validate uploaded
+                    DBF records and
+                    generate
+                    agent-specific
+                    files.
+                  </Text>
+                </div>
+              </Space>
             </Col>
 
             <Col>
@@ -949,19 +1374,31 @@ const SplitPage = () => {
                 <DatePicker
                   value={
                     selectedDate
-                      ? dayjs(selectedDate)
+                      ? dayjs(
+                          selectedDate,
+                        )
                       : null
                   }
-                  onChange={handleDateChange}
+                  onChange={
+                    handleDateChange
+                  }
                   allowClear={false}
                   format="DD MMM YYYY"
-                  suffixIcon={<CalendarOutlined />}
-                  style={{ width: 185 }}
+                  suffixIcon={
+                    <CalendarOutlined />
+                  }
+                  style={{
+                    width: 185,
+                  }}
                 />
               </Space>
             </Col>
           </Row>
         </Card>
+
+        {/* =====================================================
+            ERRORS
+        ====================================================== */}
 
         {error && (
           <Alert
@@ -970,8 +1407,12 @@ const SplitPage = () => {
             type="error"
             message="Unable to load split data"
             description={error}
-            style={{ marginBottom: 24 }}
-            onClose={() => setError("")}
+            onClose={() =>
+              setError("")
+            }
+            style={{
+              marginBottom: 20,
+            }}
           />
         )}
 
@@ -982,7 +1423,9 @@ const SplitPage = () => {
               showIcon
               message="No archive uploaded"
               description="No DBF archive exists for this date. Upload the archive before splitting."
-              style={{ marginBottom: 24 }}
+              style={{
+                marginBottom: 20,
+              }}
             />
           )}
 
@@ -998,39 +1441,56 @@ const SplitPage = () => {
                   size={4}
                 >
                   <Text>
-                    Splitting is disabled until the
+                    Splitting is
+                    disabled until the
                     errors are fixed.
                   </Text>
 
-                  {mismatchCount > 0 && (
+                  {mismatchCount >
+                    0 && (
                     <Text type="danger">
                       Mismatches:{" "}
                       <strong>
-                        {mismatchCount}
+                        {
+                          mismatchCount
+                        }
                       </strong>
                     </Text>
                   )}
 
-                  {missingCount > 0 && (
+                  {missingCount >
+                    0 && (
                     <Text type="danger">
-                      Missing lotteries:{" "}
+                      Missing
+                      lotteries:{" "}
                       <strong>
-                        {missingCount}
+                        {
+                          missingCount
+                        }
                       </strong>
                     </Text>
                   )}
 
-                  {extraCount > 0 && (
+                  {extraCount >
+                    0 && (
                     <Text
-                      style={{ color: "#d48806" }}
+                      style={{
+                        color:
+                          "#d48806",
+                      }}
                     >
-                      Extra lotteries:{" "}
-                      <strong>{extraCount}</strong>
+                      Extra
+                      lotteries:{" "}
+                      <strong>
+                        {extraCount}
+                      </strong>
                     </Text>
                   )}
                 </Space>
               }
-              style={{ marginBottom: 24 }}
+              style={{
+                marginBottom: 20,
+              }}
             />
           )}
 
@@ -1040,98 +1500,132 @@ const SplitPage = () => {
             showIcon
             message="Archive validation completed"
             description="All uploaded records match the order quantities. The archive is ready to split."
-            style={{ marginBottom: 24 }}
+            style={{
+              marginBottom: 20,
+            }}
           />
         )}
 
+        {/* =====================================================
+            STATISTICS
+        ====================================================== */}
+
         <Row
-          gutter={[20, 20]}
-          style={{ marginBottom: 24 }}
+          gutter={[16, 16]}
+          style={{
+            marginBottom: 20,
+          }}
         >
-          <Col xs={24} sm={12} xl={6}>
+          <Col
+            xs={24}
+            sm={12}
+            xl={6}
+          >
             <Card
+              className="split-stat-card blue-stat"
               bordered={false}
-              style={{
-                height: "100%",
-                borderRadius: 16,
-                boxShadow:
-                  "0 4px 16px rgba(0, 0, 0, 0.04)",
-              }}
             >
               <Statistic
                 title="Uploaded Files"
-                value={lotteries.length}
+                value={
+                  lotteries.length
+                }
                 suffix="/ 8"
                 prefix={
                   <DatabaseOutlined
-                    style={{ color: "#1677ff" }}
+                    style={{
+                      color:
+                        "#1677ff",
+                    }}
                   />
                 }
-                valueStyle={{ fontWeight: 700 }}
+                valueStyle={{
+                  fontWeight: 700,
+                }}
               />
             </Card>
           </Col>
 
-          <Col xs={24} sm={12} xl={6}>
+          <Col
+            xs={24}
+            sm={12}
+            xl={6}
+          >
             <Card
+              className="split-stat-card purple-stat"
               bordered={false}
-              style={{
-                height: "100%",
-                borderRadius: 16,
-                boxShadow:
-                  "0 4px 16px rgba(0, 0, 0, 0.04)",
-              }}
             >
               <Statistic
                 title="Uploaded Records"
-                value={totalUploadedRecords}
+                value={
+                  totalUploadedRecords
+                }
                 prefix={
                   <DatabaseOutlined
-                    style={{ color: "#722ed1" }}
+                    style={{
+                      color:
+                        "#722ed1",
+                    }}
                   />
                 }
-                valueStyle={{ fontWeight: 700 }}
+                valueStyle={{
+                  fontWeight: 700,
+                }}
               />
             </Card>
           </Col>
 
-          <Col xs={24} sm={12} xl={6}>
+          <Col
+            xs={24}
+            sm={12}
+            xl={6}
+          >
             <Card
+              className={
+                agent ===
+                "JAYAWAY"
+                  ? "split-stat-card purple-stat"
+                  : "split-stat-card cyan-stat"
+              }
               bordered={false}
-              style={{
-                height: "100%",
-                borderRadius: 16,
-                boxShadow:
-                  "0 4px 16px rgba(0, 0, 0, 0.04)",
-              }}
             >
               <Statistic
                 title={`${agent} Assigned`}
-                value={totalAssignedToAgent}
+                value={
+                  totalAssignedToAgent
+                }
                 prefix={
                   <UserOutlined
                     style={{
                       color:
-                        agent === "JAYAWAY"
+                        agent ===
+                        "JAYAWAY"
                           ? "#722ed1"
                           : "#13c2c2",
                     }}
                   />
                 }
-                valueStyle={{ fontWeight: 700 }}
+                valueStyle={{
+                  fontWeight: 700,
+                }}
               />
             </Card>
           </Col>
 
-          <Col xs={24} sm={12} xl={6}>
+          <Col
+            xs={24}
+            sm={12}
+            xl={6}
+          >
             <Card
+              className={`split-stat-card ${
+                validation?.is_valid
+                  ? "green-stat"
+                  : validation?.upload_exists
+                    ? "red-stat"
+                    : "orange-stat"
+              }`}
               bordered={false}
-              style={{
-                height: "100%",
-                borderRadius: 16,
-                boxShadow:
-                  "0 4px 16px rgba(0, 0, 0, 0.04)",
-              }}
             >
               <Statistic
                 title="Validation Status"
@@ -1145,7 +1639,10 @@ const SplitPage = () => {
                 prefix={
                   validation?.is_valid ? (
                     <CheckCircleOutlined
-                      style={{ color: "#52c41a" }}
+                      style={{
+                        color:
+                          "#52c41a",
+                      }}
                     />
                   ) : (
                     <WarningOutlined
@@ -1160,132 +1657,281 @@ const SplitPage = () => {
                 }
                 valueStyle={{
                   fontWeight: 700,
-                  color: validation?.is_valid
-                    ? "#52c41a"
-                    : validation?.upload_exists
-                      ? "#ff4d4f"
-                      : "#fa8c16",
+
+                  color:
+                    validation?.is_valid
+                      ? "#52c41a"
+                      : validation?.upload_exists
+                        ? "#ff4d4f"
+                        : "#fa8c16",
                 }}
               />
             </Card>
           </Col>
         </Row>
 
+        {/* =====================================================
+            VALIDATION
+        ====================================================== */}
+
         <Card
+          className="split-section-card"
+          bordered={false}
           title={
-            <Space>
-              <DatabaseOutlined
-                style={{ color: "#1677ff" }}
-              />
-              <span>Uploaded File Validation</span>
+            <Space size={10}>
+              <div className="section-icon">
+                <DatabaseOutlined />
+              </div>
+
+              <div>
+                <Text
+                  strong
+                  style={{
+                    display:
+                      "block",
+                    fontSize: 16,
+                  }}
+                >
+                  Uploaded File
+                  Validation
+                </Text>
+
+                <Text
+                  type="secondary"
+                  style={{
+                    fontSize: 12,
+                  }}
+                >
+                  Compare uploaded
+                  records against
+                  ordered quantities
+                </Text>
+              </div>
             </Space>
           }
           extra={
-            validation?.is_valid ? (
-              <Tag
-                color="success"
-                icon={<CheckCircleOutlined />}
+            <Space size={10}>
+              {validation?.is_valid ? (
+                <Tag
+                  color="success"
+                  icon={
+                    <CheckCircleOutlined />
+                  }
+                >
+                  Ready
+                </Tag>
+              ) : (
+                <Tag
+                  color="warning"
+                  icon={
+                    <WarningOutlined />
+                  }
+                >
+                  Check required
+                </Tag>
+              )}
+
+              <Button
+                type="text"
+                className="details-button"
+                icon={
+                  showValidationTable ? (
+                    <UpOutlined />
+                  ) : (
+                    <DownOutlined />
+                  )
+                }
+                onClick={() =>
+                  setShowValidationTable(
+                    (previous) =>
+                      !previous,
+                  )
+                }
               >
-                Ready
-              </Tag>
-            ) : (
-              <Tag
-                color="warning"
-                icon={<WarningOutlined />}
-              >
-                Check required
-              </Tag>
-            )
+                {showValidationTable
+                  ? "Hide Details"
+                  : "View Details"}
+              </Button>
+            </Space>
           }
-          bordered={false}
-          style={{
-            marginBottom: 24,
-            borderRadius: 16,
-            boxShadow:
-              "0 4px 16px rgba(0, 0, 0, 0.04)",
-          }}
         >
-          <Table
-            rowKey={(record, index) =>
-              `${
-                record.lottery_code ||
-                record.lottery_name
-              }-${index}`
-            }
-            columns={uploadedColumns}
-            dataSource={lotteries}
-            loading={loading}
-            pagination={false}
-            scroll={{ x: 1350 }}
-            rowClassName={(record) => {
-              const mismatch =
-                getMismatchInfo(record);
+          {showValidationTable && (
+            <div className="validation-table-wrapper">
+              <Table
+                rowKey={(
+                  record,
+                  index,
+                ) =>
+                  `${
+                    record.lottery_code ||
+                    record.lottery_name
+                  }-${index}`
+                }
+                columns={
+                  uploadedColumns
+                }
+                dataSource={
+                  lotteries
+                }
+                loading={loading}
+                pagination={false}
+                size="middle"
+                scroll={{
+                  x: 900,
+                }}
+                rowClassName={(
+                  record,
+                ) => {
+                  const mismatch =
+                    getMismatchInfo(
+                      record,
+                    );
 
-              const missing =
-                getMissingInfo(record);
+                  const missing =
+                    getMissingInfo(
+                      record,
+                    );
 
-              return mismatch || missing
-                ? "split-error-row"
-                : "";
-            }}
-            locale={{
-              emptyText: (
-                <Empty
-                  image={
-                    Empty.PRESENTED_IMAGE_SIMPLE
-                  }
-                  description={
-                    selectedDate
-                      ? "No uploaded archive found for this date"
-                      : "Select a draw date"
-                  }
-                />
-              ),
-            }}
-          />
+                  return mismatch ||
+                    missing
+                    ? "split-error-row"
+                    : "";
+                }}
+                locale={{
+                  emptyText: (
+                    <Empty
+                      image={
+                        Empty.PRESENTED_IMAGE_SIMPLE
+                      }
+                      description={
+                        selectedDate
+                          ? "No uploaded archive found for this date"
+                          : "Select a draw date"
+                      }
+                    />
+                  ),
+                }}
+              />
+            </div>
+          )}
+
+          {!showValidationTable && (
+            <div className="validation-collapsed">
+              <div className="validation-summary">
+                <div>
+                  <Text type="secondary">
+                    Uploaded
+                  </Text>
+
+                  <Text strong>
+                    {totalUploadedRecords.toLocaleString()}
+                  </Text>
+                </div>
+
+                <div>
+                  <Text type="secondary">
+                    Mismatches
+                  </Text>
+
+                  <Text
+                    strong
+                    type={
+                      mismatchCount > 0
+                        ? "danger"
+                        : undefined
+                    }
+                  >
+                    {mismatchCount}
+                  </Text>
+                </div>
+
+                <div>
+                  <Text type="secondary">
+                    Missing
+                  </Text>
+
+                  <Text
+                    strong
+                    type={
+                      missingCount > 0
+                        ? "danger"
+                        : undefined
+                    }
+                  >
+                    {missingCount}
+                  </Text>
+                </div>
+
+                <div>
+                  <Text type="secondary">
+                    Extra
+                  </Text>
+
+                  <Text strong>
+                    {extraCount}
+                  </Text>
+                </div>
+              </div>
+            </div>
+          )}
         </Card>
+
+        {/* =====================================================
+            SPLIT SECTION
+        ====================================================== */}
 
         {sessionId &&
           validation?.is_valid && (
             <>
+              {/* AGENT SELECTOR */}
+
               <Card
+                className="split-agent-selector"
                 bordered={false}
-                style={{
-                  marginBottom: 24,
-                  borderRadius: 16,
-                  boxShadow:
-                    "0 4px 16px rgba(0, 0, 0, 0.04)",
-                }}
               >
                 <Row
-                  gutter={[20, 20]}
+                  gutter={[
+                    20,
+                    20,
+                  ]}
                   align="middle"
                   justify="space-between"
                 >
                   <Col>
-                    <Space>
-                      <TeamOutlined
-                        style={{
-                          color: "#1677ff",
-                          fontSize: 20,
-                        }}
-                      />
+                    <Space
+                      size={12}
+                    >
+                      <div className="agent-select-icon">
+                        <TeamOutlined />
+                      </div>
 
                       <div>
-                        <Text strong>
-                          Select split agent
+                        <Text
+                          strong
+                          style={{
+                            display:
+                              "block",
+                            fontSize:
+                              15,
+                          }}
+                        >
+                          Select split
+                          agent
                         </Text>
 
-                        <div>
-                          <Text
-                            type="secondary"
-                            style={{ fontSize: 12 }}
-                          >
-                            Choose the agent whose
-                            assigned DBF records should
-                            be generated.
-                          </Text>
-                        </div>
+                        <Text
+                          type="secondary"
+                          style={{
+                            fontSize:
+                              12,
+                          }}
+                        >
+                          Choose the
+                          agent whose
+                          assigned DBF
+                          records should
+                          be generated.
+                        </Text>
                       </div>
                     </Space>
                   </Col>
@@ -1293,16 +1939,22 @@ const SplitPage = () => {
                   <Col>
                     <Select
                       value={agent}
-                      onChange={setAgent}
-                      style={{ width: 180 }}
+                      onChange={
+                        setAgent
+                      }
+                      className="agent-select"
                       options={[
                         {
-                          value: "JAYAWAY",
-                          label: "JAYAWAY",
+                          value:
+                            "JAYAWAY",
+                          label:
+                            "JAYAWAY",
                         },
                         {
-                          value: "WINWAY",
-                          label: "WINWAY",
+                          value:
+                            "WINWAY",
+                          label:
+                            "WINWAY",
                         },
                       ]}
                     />
@@ -1310,68 +1962,153 @@ const SplitPage = () => {
                 </Row>
               </Card>
 
-              <Card
-                title={
-                  <Space>
-                    <UserOutlined
-                      style={{
-                        color:
-                          agent === "JAYAWAY"
-                            ? "#722ed1"
-                            : "#13c2c2",
-                      }}
-                    />
+              {/* ASSIGNMENT TABLE */}
 
-                    <span>
-                      Assigned Counts for {agent}
-                    </span>
+              <Card
+                className={`split-assignment-card ${
+                  agent ===
+                  "JAYAWAY"
+                    ? "jayaway-card"
+                    : "winway-card"
+                }`}
+                bordered={false}
+                title={
+                  <Space size={10}>
+                    <div
+                      className={`agent-icon-box ${
+                        agent ===
+                        "JAYAWAY"
+                          ? "jayaway-icon"
+                          : "winway-icon"
+                      }`}
+                    >
+                      <UserOutlined />
+                    </div>
+
+                    <div>
+                      <Text
+                        strong
+                        style={{
+                          display:
+                            "block",
+                          fontSize: 16,
+                        }}
+                      >
+                        {agent}{" "}
+                        Assignment
+                      </Text>
+
+                      <Text
+                        type="secondary"
+                        style={{
+                          fontSize: 12,
+                        }}
+                      >
+                        Assigned
+                        lottery
+                        quantities
+                      </Text>
+                    </div>
                   </Space>
                 }
                 extra={
-                  <Tag
-                    color={
-                      agent === "JAYAWAY"
-                        ? "purple"
-                        : "cyan"
-                    }
-                  >
-                    {totalAssignedToAgent.toLocaleString()}{" "}
-                    records
-                  </Tag>
+                  assignedCounts.length >
+                    0 && (
+                    <Space
+                      size={12}
+                      wrap
+                    >
+                      <Tag
+                        color={
+                          agent ===
+                          "JAYAWAY"
+                            ? "purple"
+                            : "cyan"
+                        }
+                        className="record-count-tag"
+                      >
+                        {totalAssignedToAgent.toLocaleString()}{" "}
+                        Records
+                      </Tag>
+
+                      <Button
+                        type="primary"
+                        icon={
+                          <ScissorOutlined />
+                        }
+                        loading={
+                          splitting
+                        }
+                        disabled={
+                          !canSplit ||
+                          loadingAssignments
+                        }
+                        onClick={
+                          handleSplit
+                        }
+                        className={
+                          agent ===
+                          "JAYAWAY"
+                            ? "split-action-btn jayaway-btn"
+                            : "split-action-btn winway-btn"
+                        }
+                      >
+                        Split for{" "}
+                        {agent}
+                      </Button>
+                    </Space>
+                  )
                 }
-                bordered={false}
-                style={{
-                  borderRadius: 16,
-                  boxShadow:
-                    "0 4px 16px rgba(0, 0, 0, 0.04)",
-                }}
               >
                 <Table
-                  rowKey={(record, index) =>
+                  rowKey={(
+                    record,
+                    index,
+                  ) =>
                     `${
                       record.lottery_code ||
                       record.lottery_name
                     }-${index}`
                   }
-                  columns={assignmentColumns}
-                  dataSource={assignedCounts}
-                  loading={loadingAssignments}
+                  columns={
+                    assignmentColumns
+                  }
+                  dataSource={
+                    assignedCounts
+                  }
+                  loading={
+                    loadingAssignments
+                  }
                   pagination={false}
-                  scroll={{ x: 1050 }}
+                  size="middle"
+                  scroll={{
+                    x: 850,
+                  }}
                   locale={{
                     emptyText: (
                       <Empty
                         image={
                           Empty.PRESENTED_IMAGE_SIMPLE
                         }
-                        description={`No assignments found for ${agent}`}
+                        description={
+                          <Text type="secondary">
+                            No assignments
+                            found for{" "}
+                            <Text
+                              strong
+                            >
+                              {agent}
+                            </Text>
+                          </Text>
+                        }
                       />
                     ),
                   }}
                   summary={() =>
-                    assignedCounts.length > 0 ? (
-                      <Table.Summary fixed>
-                        <Table.Summary.Row>
+                    assignedCounts.length >
+                    0 ? (
+                      <Table.Summary>
+                        <Table.Summary.Row className="summary-row">
                           <Table.Summary.Cell
                             index={0}
                           />
@@ -1379,80 +2116,780 @@ const SplitPage = () => {
                           <Table.Summary.Cell
                             index={1}
                           >
-                            <Text strong>Total</Text>
+                            <Text
+                              strong
+                            >
+                              Total
+                            </Text>
                           </Table.Summary.Cell>
 
                           <Table.Summary.Cell
                             index={2}
-                          />
-
-                          <Table.Summary.Cell
-                            index={3}
                             align="right"
                           >
-                            <Text strong>
+                            <Text
+                              strong
+                            >
                               {totalAvailableQuantity.toLocaleString()}
                             </Text>
                           </Table.Summary.Cell>
 
                           <Table.Summary.Cell
-                            index={4}
+                            index={3}
                             align="right"
                           >
-                            <Text strong>
+                            <Text
+                              strong
+                              style={{
+                                color:
+                                  agent ===
+                                  "JAYAWAY"
+                                    ? "#722ed1"
+                                    : "#13c2c2",
+                              }}
+                            >
                               {totalAssignedToAgent.toLocaleString()}
                             </Text>
                           </Table.Summary.Cell>
 
                           <Table.Summary.Cell
-                            index={5}
+                            index={4}
                           />
                         </Table.Summary.Row>
                       </Table.Summary>
                     ) : null
                   }
                 />
-
-                {assignedCounts.length > 0 && (
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "flex-end",
-                      marginTop: 24,
-                    }}
-                  >
-                    <Button
-                      type="primary"
-                      size="large"
-                      icon={<ScissorOutlined />}
-                      loading={splitting}
-                      disabled={
-                        !canSplit ||
-                        loadingAssignments
-                      }
-                      onClick={handleSplit}
-                      style={{
-                        minWidth: 190,
-                        background: "#722ed1",
-                      }}
-                    >
-                      Split for {agent}
-                    </Button>
-                  </div>
-                )}
               </Card>
             </>
           )}
       </div>
 
+      {/* =====================================================
+          STYLES
+      ====================================================== */}
+
       <style>
         {`
+          /* ==========================================
+             PAGE
+          ========================================== */
+
+          .split-page {
+            width: 100%;
+            padding: 4px;
+          }
+
+          /* ==========================================
+             COMMON CARD STYLE
+          ========================================== */
+
+          .split-header-card,
+          .split-stat-card,
+          .split-section-card,
+          .split-agent-selector,
+          .split-assignment-card {
+            border: 1px solid #f0f0f0 !important;
+            border-radius: 16px !important;
+
+            box-shadow:
+              0 4px 18px
+              rgba(0, 0, 0, 0.055) !important;
+
+            transition:
+              transform 0.25s ease,
+              box-shadow 0.25s ease,
+              border-color 0.25s ease;
+          }
+
+          /* ==========================================
+             PAGE HEADER
+          ========================================== */
+
+          .split-header-card {
+            margin-bottom: 20px;
+
+            background:
+              linear-gradient(
+                135deg,
+                #ffffff 0%,
+                #f7faff 100%
+              );
+          }
+
+          .split-header-card:hover {
+            box-shadow:
+              0 8px 28px
+              rgba(0, 0, 0, 0.07) !important;
+          }
+
+          .page-icon {
+            width: 48px;
+            height: 48px;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            flex-shrink: 0;
+
+            border-radius: 14px;
+
+            background:
+              linear-gradient(
+                135deg,
+                #1677ff,
+                #4096ff
+              );
+
+            color: white;
+            font-size: 21px;
+
+            box-shadow:
+              0 5px 14px
+              rgba(22, 119, 255, 0.22);
+          }
+
+          /* ==========================================
+             STAT CARDS
+          ========================================== */
+
+          .split-stat-card {
+            position: relative;
+            height: 100%;
+
+            overflow: hidden;
+
+            background: #ffffff;
+          }
+
+          .split-stat-card::before {
+            content: "";
+
+            position: absolute;
+
+            left: 0;
+            top: 0;
+
+            width: 4px;
+            height: 100%;
+
+            opacity: 0.85;
+          }
+
+          .split-stat-card:hover {
+            transform: translateY(-3px);
+
+            box-shadow:
+              0 10px 28px
+              rgba(0, 0, 0, 0.085) !important;
+          }
+
+          .blue-stat::before {
+            background: #1677ff;
+          }
+
+          .purple-stat::before {
+            background: #722ed1;
+          }
+
+          .cyan-stat::before {
+            background: #13c2c2;
+          }
+
+          .green-stat::before {
+            background: #52c41a;
+          }
+
+          .red-stat::before {
+            background: #ff4d4f;
+          }
+
+          .orange-stat::before {
+            background: #fa8c16;
+          }
+
+          .split-stat-card .ant-card-body {
+            padding: 20px 22px;
+          }
+
+          .split-stat-card
+          .ant-statistic-title {
+            margin-bottom: 8px;
+
+            color: #8c8c8c;
+
+            font-size: 13px;
+            font-weight: 500;
+          }
+
+          .split-stat-card
+          .ant-statistic-content {
+            font-size: 25px;
+          }
+
+          /* ==========================================
+             ALERTS
+          ========================================== */
+
+          .split-page .ant-alert {
+            border-radius: 12px;
+
+            box-shadow:
+              0 2px 10px
+              rgba(0, 0, 0, 0.025);
+          }
+
+          /* ==========================================
+             VALIDATION CARD
+          ========================================== */
+
+          .split-section-card {
+            margin-bottom: 20px;
+
+            overflow: hidden;
+
+            background: #ffffff;
+          }
+
+          .split-section-card
+          .ant-card-head {
+            min-height: 72px;
+
+            padding: 0 20px;
+
+            border-bottom:
+              1px solid #f2f2f2;
+          }
+
+          .section-icon {
+            width: 36px;
+            height: 36px;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            border-radius: 10px;
+
+            background: #e6f4ff;
+            color: #1677ff;
+
+            font-size: 17px;
+          }
+
+          .details-button {
+            height: 36px;
+
+            padding: 0 10px !important;
+
+            border-radius: 8px !important;
+
+            color: #1677ff !important;
+
+            font-weight: 500;
+          }
+
+          .details-button:hover {
+            background:
+              #e6f4ff !important;
+          }
+
+          /* ==========================================
+             COLLAPSED VALIDATION SUMMARY
+          ========================================== */
+
+          .validation-collapsed {
+            padding: 4px 0;
+          }
+
+          .validation-summary {
+            display: grid;
+
+            grid-template-columns:
+              repeat(4, 1fr);
+
+            gap: 12px;
+          }
+
+          .validation-summary > div {
+            padding: 12px 14px;
+
+            border: 1px solid #f0f0f0;
+            border-radius: 10px;
+
+            background: #fafafa;
+          }
+
+          .validation-summary
+          > div
+          > span {
+            display: block;
+          }
+
+          .validation-summary
+          > div
+          > span:last-child {
+            margin-top: 3px;
+
+            font-size: 17px;
+          }
+
+          /* ==========================================
+             VALIDATION TABLE ANIMATION
+          ========================================== */
+
+          .validation-table-wrapper {
+            margin: -24px;
+
+            animation:
+              validationOpen
+              0.25s ease;
+          }
+
+          @keyframes validationOpen {
+            from {
+              opacity: 0;
+              transform:
+                translateY(-7px);
+            }
+
+            to {
+              opacity: 1;
+              transform:
+                translateY(0);
+            }
+          }
+
+          /* ==========================================
+             TABLE COMMON
+          ========================================== */
+
+          .split-page
+          .ant-table-thead
+          > tr
+          > th {
+            background:
+              #fafcff !important;
+
+            color: #595959;
+
+            font-size: 12px;
+            font-weight: 600;
+
+            border-bottom:
+              1px solid #edf0f5;
+          }
+
+          .split-page
+          .ant-table-tbody
+          > tr
+          > td {
+            transition:
+              background 0.18s ease;
+          }
+
+          .split-page
+          .ant-table-tbody
+          > tr:hover
+          > td {
+            background:
+              #f8fbff !important;
+          }
+
+          /* ==========================================
+             ERROR ROW
+          ========================================== */
+
           .split-error-row > td {
-            background: #fff2f0 !important;
+            background:
+              #fff2f0 !important;
           }
 
           .split-error-row:hover > td {
-            background: #ffccc7 !important;
+            background:
+              #ffe7e5 !important;
+          }
+
+          /* ==========================================
+             TICKET BOX
+          ========================================== */
+
+          .ticket-code-box {
+            width: 40px;
+            height: 40px;
+
+            flex-shrink: 0;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            border-radius: 10px;
+
+            background: #e6f4ff;
+            color: #1677ff;
+
+            font-weight: 700;
+
+            text-transform:
+              uppercase;
+          }
+
+          /* ==========================================
+             SERIAL RANGE
+          ========================================== */
+
+          .serial-range > div {
+            display: flex;
+            align-items: center;
+
+            gap: 8px;
+          }
+
+          .serial-label {
+            display: inline-block;
+
+            width: 36px;
+
+            font-size: 9px;
+
+            font-weight: 600;
+          }
+
+          /* ==========================================
+             AGENT SELECTOR
+          ========================================== */
+
+          .split-agent-selector {
+            margin-bottom: 20px;
+
+            background:
+              linear-gradient(
+                135deg,
+                #ffffff,
+                #fafcff
+              );
+          }
+
+          .split-agent-selector:hover {
+            border-color:
+              #d6e4ff !important;
+          }
+
+          .agent-select-icon {
+            width: 38px;
+            height: 38px;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            border-radius: 10px;
+
+            background: #e6f4ff;
+            color: #1677ff;
+
+            font-size: 18px;
+          }
+
+          .agent-select {
+            width: 190px;
+          }
+
+          .agent-select
+          .ant-select-selector {
+            min-height:
+              40px !important;
+
+            display: flex;
+            align-items: center;
+
+            border-radius:
+              10px !important;
+
+            font-weight: 600;
+          }
+
+          /* ==========================================
+             ASSIGNMENT CARD
+          ========================================== */
+
+          .split-assignment-card {
+            overflow: hidden;
+
+            background: #ffffff;
+          }
+
+          .split-assignment-card.jayaway-card {
+            border-top:
+              3px solid
+              #722ed1 !important;
+          }
+
+          .split-assignment-card.winway-card {
+            border-top:
+              3px solid
+              #13c2c2 !important;
+          }
+
+          .split-assignment-card
+          .ant-card-head {
+            min-height: 74px;
+
+            padding: 0 20px;
+
+            border-bottom:
+              1px solid #f0f0f0;
+          }
+
+          .split-assignment-card
+          .ant-card-body {
+            padding: 0;
+          }
+
+          /* ==========================================
+             AGENT HEADER ICON
+          ========================================== */
+
+          .agent-icon-box {
+            width: 38px;
+            height: 38px;
+
+            display: flex;
+            align-items: center;
+            justify-content: center;
+
+            border-radius: 11px;
+
+            font-size: 17px;
+          }
+
+          .jayaway-icon {
+            background: #f9f0ff;
+            color: #722ed1;
+          }
+
+          .winway-icon {
+            background: #e6fffb;
+            color: #13c2c2;
+          }
+
+          /* ==========================================
+             RECORD TAG
+          ========================================== */
+
+          .record-count-tag {
+            margin: 0 !important;
+
+            padding: 5px 11px;
+
+            border-radius: 20px;
+
+            font-weight: 600;
+          }
+
+          /* ==========================================
+             SPLIT BUTTON
+          ========================================== */
+
+          .split-action-btn {
+            min-width: 165px;
+
+            height: 38px;
+
+            border-radius:
+              9px !important;
+
+            font-weight: 600;
+
+            transition:
+              transform 0.18s ease,
+              box-shadow 0.18s ease !important;
+          }
+
+          .split-action-btn:not(:disabled):hover {
+            transform:
+              translateY(-1px);
+          }
+
+          .jayaway-btn {
+            background:
+              #722ed1 !important;
+
+            border-color:
+              #722ed1 !important;
+          }
+
+          .jayaway-btn:not(:disabled):hover {
+            background:
+              #9254de !important;
+
+            border-color:
+              #9254de !important;
+
+            box-shadow:
+              0 5px 16px
+              rgba(
+                114,
+                46,
+                209,
+                0.22
+              ) !important;
+          }
+
+          .winway-btn {
+            background:
+              #13c2c2 !important;
+
+            border-color:
+              #13c2c2 !important;
+          }
+
+          .winway-btn:not(:disabled):hover {
+            background:
+              #36cfc9 !important;
+
+            border-color:
+              #36cfc9 !important;
+
+            box-shadow:
+              0 5px 16px
+              rgba(
+                19,
+                194,
+                194,
+                0.22
+              ) !important;
+          }
+
+          /* ==========================================
+             SUMMARY
+          ========================================== */
+
+          .summary-row > td {
+            background:
+              #fafafa !important;
+
+            border-top:
+              1px solid #e8e8e8;
+
+            padding-top:
+              14px !important;
+
+            padding-bottom:
+              14px !important;
+          }
+
+          /* ==========================================
+             TAGS
+          ========================================== */
+
+          .split-page .ant-tag {
+            border-radius: 7px;
+
+            font-weight: 500;
+          }
+
+          /* ==========================================
+             BUTTONS
+          ========================================== */
+
+          .split-page .ant-btn {
+            transition:
+              transform 0.18s ease,
+              box-shadow 0.18s ease,
+              background 0.18s ease;
+          }
+
+          .split-page
+          .ant-btn:not(:disabled):hover {
+            transform:
+              translateY(-1px);
+          }
+
+          /* ==========================================
+             DATE PICKER
+          ========================================== */
+
+          .split-page .ant-picker {
+            min-height: 40px;
+
+            border-radius:
+              10px;
+
+            transition:
+              border-color 0.2s ease,
+              box-shadow 0.2s ease;
+          }
+
+          .split-page
+          .ant-picker-focused {
+            box-shadow:
+              0 0 0 3px
+              rgba(
+                22,
+                119,
+                255,
+                0.08
+              );
+          }
+
+          /* ==========================================
+             RESPONSIVE
+          ========================================== */
+
+          @media
+          (max-width: 768px) {
+
+            .split-page {
+              padding: 0;
+            }
+
+            .split-header-card
+            .ant-card-body {
+              padding: 18px;
+            }
+
+            .split-stat-card
+            .ant-card-body {
+              padding: 17px;
+            }
+
+            .validation-summary {
+              grid-template-columns:
+                repeat(2, 1fr);
+            }
+
+            .split-section-card
+            .ant-card-head,
+            .split-assignment-card
+            .ant-card-head {
+              padding:
+                12px 16px;
+            }
+
+            .agent-select {
+              width: 100%;
+              min-width: 160px;
+            }
+          }
+
+          @media
+          (max-width: 480px) {
+
+            .validation-summary {
+              grid-template-columns:
+                1fr 1fr;
+            }
+
+            .record-count-tag {
+              display: none;
+            }
+
+            .split-action-btn {
+              min-width: 140px;
+            }
           }
         `}
       </style>
@@ -1461,4 +2898,3 @@ const SplitPage = () => {
 };
 
 export default SplitPage;
-
