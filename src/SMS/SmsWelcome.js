@@ -73,7 +73,7 @@ const styles = {
     paddingBottom: "56.25%", // 16:9
     borderRadius: 14,
     overflow: "hidden",
-    background: "rgba(0,0,0,0.25)",
+    background: "rgba(0,0,0,0.5)",
   },
   iframe: {
     position: "absolute",

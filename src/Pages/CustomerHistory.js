@@ -658,7 +658,7 @@ const CustomerModel = ({ open, onClose, customer, onSendEmail }) => {
             color: "#000000ff",
             fontSize: 16,
             letterSpacing: 0.4,
-            textShadow: "0 0 8px rgba(123,47,247,0.4)",
+            textShadow: "0 0 8px rgba(123,47,247,0.5)",
           }}
         >
           Loyalty Progress
@@ -687,7 +687,7 @@ const CustomerModel = ({ open, onClose, customer, onSendEmail }) => {
                 display: "inline-block",
                 background: "linear-gradient(145deg,#ffffff,#f9f5ff)",
                 boxShadow:
-                  "0 4px 15px rgba(123,47,247,0.15), inset 0 0 12px rgba(255,255,255,0.4)",
+                  "0 4px 15px rgba(123,47,247,0.15), inset 0 0 12px rgba(255,255,255,0.5)",
                 borderRadius: 16,
                 padding: "14px 28px",
                 minWidth: 420,

@@ -997,7 +997,7 @@ function LoyaltyCustomers() {
                   ? "2px solid #1976d2"
                   : "1px solid #e0e0e0",
                 boxShadow: !selectedTier
-                  ? "0 6px 18px rgba(25,118,210,0.25)"
+                  ? "0 6px 18px rgba(25,118,210,0.5)"
                   : "0 2px 8px rgba(0,0,0,0.05)",
                 transition: "all 0.25s ease",
               }}
@@ -1175,7 +1175,7 @@ function LoyaltyCustomers() {
                           fontWeight: isLatest ? 600 : 500,
                           borderRadius: 20,
                           boxShadow: isLatest
-                            ? "0 4px 12px rgba(82,196,26,0.25)"
+                            ? "0 4px 12px rgba(82,196,26,0.5)"
                             : "0 2px 6px rgba(0,0,0,0.08)",
                         }}
                       >
@@ -1210,7 +1210,7 @@ function LoyaltyCustomers() {
                     : "1px solid #c8e6c9",
                 boxShadow:
                   selectedStatus === "Initial Load"
-                    ? "0 6px 18px rgba(46,125,50,0.25)"
+                    ? "0 6px 18px rgba(46,125,50,0.5)"
                     : "0 2px 8px rgba(0,0,0,0.05)",
               }}
               onClick={() => {
@@ -1250,7 +1250,7 @@ function LoyaltyCustomers() {
                     : "1px solid #bbdefb",
                 boxShadow:
                   selectedStatus === "Upgraded"
-                    ? "0 6px 18px rgba(25,118,210,0.25)"
+                    ? "0 6px 18px rgba(25,118,210,0.5)"
                     : "0 2px 8px rgba(0,0,0,0.05)",
               }}
               onClick={() => {
@@ -1290,7 +1290,7 @@ function LoyaltyCustomers() {
                     : "1px solid #ffe0b2",
                 boxShadow:
                   selectedStatus === "Same"
-                    ? "0 6px 18px rgba(245,124,0,0.25)"
+                    ? "0 6px 18px rgba(245,124,0,0.5)"
                     : "0 2px 8px rgba(0,0,0,0.05)",
               }}
               onClick={() => {
@@ -1330,7 +1330,7 @@ function LoyaltyCustomers() {
                     : "1px solid #ffcdd2",
                 boxShadow:
                   selectedStatus === "Down"
-                    ? "0 6px 18px rgba(211,47,47,0.25)"
+                    ? "0 6px 18px rgba(211,47,47,0.5)"
                     : "0 2px 8px rgba(0,0,0,0.05)",
               }}
               onClick={() => {

@@ -455,7 +455,7 @@ const ResultDownload = () => {
           style={{
             marginBottom: 24,
             borderRadius: 16,
-            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
           }}
         >
           <Row gutter={[20, 20]} align="middle" justify="space-between">
@@ -533,7 +533,7 @@ const ResultDownload = () => {
               style={{
                 height: "100%",
                 borderRadius: 16,
-                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
               }}
             >
               <Statistic
@@ -551,7 +551,7 @@ const ResultDownload = () => {
               style={{
                 height: "100%",
                 borderRadius: 16,
-                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
               }}
             >
               <Statistic
@@ -569,7 +569,7 @@ const ResultDownload = () => {
               style={{
                 height: "100%",
                 borderRadius: 16,
-                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
               }}
             >
               <Statistic
@@ -587,7 +587,7 @@ const ResultDownload = () => {
               style={{
                 height: "100%",
                 borderRadius: 16,
-                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+                boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
               }}
             >
               <Statistic
@@ -639,7 +639,7 @@ const ResultDownload = () => {
           bordered={false}
           style={{
             borderRadius: 16,
-            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.04)",
+            boxShadow: "0 4px 16px rgba(0, 0, 0, 0.4)",
           }}
         >
           {sessionId && (
