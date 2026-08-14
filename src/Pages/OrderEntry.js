@@ -593,8 +593,12 @@ const OrderEntry = () => {
             </Space>
           }
           extra={
-            <>
-
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+              }}
+            >
               <Button
                 icon={<SyncOutlined spin={autoFilling} />}
                 loading={autoFilling}
@@ -603,23 +607,21 @@ const OrderEntry = () => {
               >
                 Auto-fill Draw Numbers
               </Button>
-                            {orders.length > 0 && (
-                 <Button
-                    type="primary"
-                    
-                    icon={<SaveOutlined />}
-                    loading={saving}
-                    disabled={loading || !selectedDate}
-                    onClick={handleSave}
-                    style={{
-                   
-                      marginLeft: 8,
-                    }}
-                  >
-                    Save Orders
-                  </Button>
+              {orders.length > 0 && (
+                <Button
+                  type="primary"
+                  icon={<SaveOutlined />}
+                  loading={saving}
+                  disabled={loading || !selectedDate}
+                  onClick={handleSave}
+                  style={{
+                    marginLeft: 8,
+                  }}
+                >
+                  Save Orders
+                </Button>
               )}
-            </>
+            </div>
           }
           bordered={false}
           style={{
