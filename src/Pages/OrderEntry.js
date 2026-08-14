@@ -3,6 +3,7 @@ import {
   Alert,
   Button,
   Card,
+  Checkbox,
   Col,
   DatePicker,
   Empty,
@@ -56,6 +57,8 @@ const OrderEntry = () => {
   const [saving, setSaving] = useState(false);
   const [autoFilling, setAutoFilling] = useState(false);
   const [error, setError] = useState("");
+  const [fetchLastQuantitiesChecked, setFetchLastQuantitiesChecked] = useState(false);
+  const [fetchingLastQuantities, setFetchingLastQuantities] = useState(false);
 
   const [messageApi, messageContextHolder] = message.useMessage();
   const [modalApi, modalContextHolder] = Modal.useModal();
@@ -182,6 +185,65 @@ const OrderEntry = () => {
       messageApi.error("Failed to auto-fill draw numbers.");
     } finally {
       setAutoFilling(false);
+    }
+  };
+
+  const handleFetchLastQuantities = async (checked) => {
+    setFetchLastQuantitiesChecked(checked);
+
+    if (!checked) return;
+
+    if (!selectedDate) {
+      messageApi.warning("Please select a date first.");
+      return;
+    }
+
+    setFetchingLastQuantities(true);
+
+    try {
+      const latestResponse = await getLatestOrderDate();
+      const latestDate = latestResponse.data?.date;
+
+      if (!latestDate || latestDate === selectedDate) {
+        messageApi.warning("No previous order available.");
+        return;
+      }
+
+      const previousOrdersResponse = await getOrders(latestDate);
+      const previousOrders = Array.isArray(previousOrdersResponse.data)
+        ? previousOrdersResponse.data
+        : [];
+
+      if (!previousOrders.length) {
+        messageApi.warning("No previous orders found.");
+        return;
+      }
+
+      const quantityMap = {};
+      previousOrders.forEach((prevOrder) => {
+        const code = String(prevOrder.lottery_code || "").toLowerCase();
+        quantityMap[code] = Number(prevOrder.quantity || 0);
+      });
+
+      setOrders((currentOrders) =>
+        currentOrders.map((order) => {
+          const code = String(order.lottery_code || "").toLowerCase();
+          const previousQuantity = quantityMap[code];
+
+          return {
+            ...order,
+            quantity: previousQuantity !== undefined ? previousQuantity : order.quantity,
+          };
+        }),
+      );
+
+      messageApi.success("Last order quantities fetched successfully.");
+    } catch (error) {
+      console.error("Failed to fetch last order quantities:", error);
+      messageApi.error("Failed to fetch last order quantities.");
+    } finally {
+      setFetchingLastQuantities(false);
+      setFetchLastQuantitiesChecked(false);
     }
   };
 
@@ -593,12 +655,16 @@ const OrderEntry = () => {
             </Space>
           }
           extra={
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-              }}
-            >
+            <>
+              <Checkbox
+                checked={fetchLastQuantitiesChecked}
+                onChange={(e) => handleFetchLastQuantities(e.target.checked)}
+                disabled={loading || !selectedDate || fetchingLastQuantities}
+                style={{ marginRight: 8 }}
+              >
+                Fetch last order quantities
+              </Checkbox>
+
               <Button
                 icon={<SyncOutlined spin={autoFilling} />}
                 loading={autoFilling}
@@ -607,6 +673,7 @@ const OrderEntry = () => {
               >
                 Auto-fill Draw Numbers
               </Button>
+
               {orders.length > 0 && (
                 <Button
                   type="primary"
@@ -621,7 +688,7 @@ const OrderEntry = () => {
                   Save Orders
                 </Button>
               )}
-            </div>
+            </>
           }
           bordered={false}
           style={{
