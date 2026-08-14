@@ -482,36 +482,33 @@ const OrderEntry = () => {
       {messageContextHolder}
       {modalContextHolder}
 
-      <div
-        
-      >
+      <div>
+        <Row gutter={[20, 20]} align="middle" justify="space-between">
+          <Col>
+            <Title level={2} style={{ margin: 0 }}>
+              Order Entry
+            </Title>
 
- <Row gutter={[20, 20]} align="middle" justify="space-between">
-            <Col>
-              <Title level={2} style={{ margin: 0 }}>
-                Order Entry
-              </Title>
+            <Text type="secondary">
+              Enter ticket quantities and draw numbers for each lottery.
+            </Text>
+          </Col>
 
-              <Text type="secondary">
-                Enter ticket quantities and draw numbers for each lottery.
-              </Text>
-            </Col>
+          <Col>
+            <Space wrap>
+              <Text type="secondary">Order date:</Text>
 
-            <Col>
-              <Space wrap>
-                <Text type="secondary">Order date:</Text>
-
-                <DatePicker
-                  value={selectedDate ? dayjs(selectedDate) : null}
-                  onChange={handleDateChange}
-                  allowClear={false}
-                  format="DD MMM YYYY"
-                  suffixIcon={<CalendarOutlined />}
-                  style={{ width: 180 }}
-                />
-              </Space>
-            </Col>
-          </Row>
+              <DatePicker
+                value={selectedDate ? dayjs(selectedDate) : null}
+                onChange={handleDateChange}
+                allowClear={false}
+                format="DD MMM YYYY"
+                suffixIcon={<CalendarOutlined />}
+                style={{ width: 180 }}
+              />
+            </Space>
+          </Col>
+        </Row>
 
         {error && (
           <Alert
@@ -596,14 +593,33 @@ const OrderEntry = () => {
             </Space>
           }
           extra={
-            <Button
-              icon={<SyncOutlined spin={autoFilling} />}
-              loading={autoFilling}
-              disabled={!selectedDate || loading}
-              onClick={handleAutoFillDrawNumbers}
-            >
-              Auto-fill Draw Numbers
-            </Button>
+            <>
+
+              <Button
+                icon={<SyncOutlined spin={autoFilling} />}
+                loading={autoFilling}
+                disabled={!selectedDate || loading}
+                onClick={handleAutoFillDrawNumbers}
+              >
+                Auto-fill Draw Numbers
+              </Button>
+                            {orders.length > 0 && (
+                 <Button
+                    type="primary"
+                    
+                    icon={<SaveOutlined />}
+                    loading={saving}
+                    disabled={loading || !selectedDate}
+                    onClick={handleSave}
+                    style={{
+                   
+                      marginLeft: 8,
+                    }}
+                  >
+                    Save Orders
+                  </Button>
+              )}
+            </>
           }
           bordered={false}
           style={{
@@ -658,30 +674,6 @@ const OrderEntry = () => {
               ) : null
             }
           />
-
-          {orders.length > 0 && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                marginTop: 24,
-              }}
-            >
-              <Button
-                type="primary"
-                size="large"
-                icon={<SaveOutlined />}
-                loading={saving}
-                disabled={loading || !selectedDate}
-                onClick={handleSave}
-                style={{
-                  minWidth: 160,
-                }}
-              >
-                Save Orders
-              </Button>
-            </div>
-          )}
         </Card>
       </div>
     </>
