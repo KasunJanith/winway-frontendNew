@@ -24,6 +24,8 @@ export const downloadFile = (sessionId, filename, originalName) => {
     responseType: "blob",
   });
 };
+export const getLatestAssignmentDate = () =>
+  api.get('/assignments/latest');
 export const downloadAgentZip = (sessionId, agentName) =>
   api.get(`/download-agent-zip/${sessionId}/${agentName}`, {
     responseType: "blob",
