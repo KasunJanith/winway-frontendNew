@@ -47,6 +47,18 @@ const LOTTERY_ORDER = [
   "suba",
 ];
 
+
+const CountInput = ({ record, agent, disabled = false, onChange }) => (
+  <InputNumber
+    min={0}
+    precision={0}
+    disabled={disabled}
+    value={record.agent_counts?.[agent] === 0 ? null : (record.agent_counts?.[agent] ?? null)}
+    onChange={(value) => onChange(record.lottery_code, agent, value)}
+    style={{ width: 80 }}
+  />
+);
+
 const Assignment = () => {
   const [date, setDate] = useState("");
   const [data, setData] = useState([]);
@@ -112,9 +124,6 @@ const Assignment = () => {
 
           agent_counts: {
             ...item.agent_counts,
-
-            // If enabling Auto → calculate remaining
-            // If disabling Auto → keep current WINWAY value
             WINWAY: shouldEnable ? winwayRemaining : currentWinwayCount,
           },
         };
@@ -432,21 +441,6 @@ const Assignment = () => {
     };
   };
 
-  const CountInput = ({ record, agent, disabled = false }) => (
-    <InputNumber
-      min={0}
-      precision={0}
-      disabled={disabled}
-      value={number(record.agent_counts?.[agent])}
-      onChange={(value) => handleCountChange(record.lottery_code, agent, value)}
-      formatter={(value) =>
-        value ? String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",") : ""
-      }
-      parser={(value) => value?.replace(/,/g, "") || ""}
-      style={{ width: 80 }}
-    />
-  );
-
   const columns = [
     {
       title: "#",
@@ -512,7 +506,13 @@ const Assignment = () => {
       title: "JAYAWAY",
       width: 50,
       align: "left",
-      render: (_, record) => <CountInput record={record} agent="JAYAWAY" />,
+      render: (_, record) => (
+        <CountInput
+          record={record}
+          agent="JAYAWAY"
+          onChange={handleCountChange}
+        />
+      ),
     },
 
     {
@@ -524,6 +524,7 @@ const Assignment = () => {
           record={record}
           agent="WINWAY"
           disabled={record.assignRemaining}
+          onChange={handleCountChange}
         />
       ),
     },
@@ -863,9 +864,6 @@ const Assignment = () => {
                     {assignmentPercentage.toFixed(1)}%
                   </Text>
                 </div>
-
-
-
               </div>
             </Card>
           </Col>
