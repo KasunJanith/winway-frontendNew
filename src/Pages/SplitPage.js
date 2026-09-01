@@ -66,7 +66,16 @@ const LOTTERY_ORDER = [
   "jaya",
   "suba",
 ];
-
+const LOTTERY_NAME_MAP = {
+  ada: "Ada Sampatha",
+  dana: "Dhana Nidhanaya",
+  govi: "Govi Setha",
+  hada: "Handahana",
+  maha: "Mahajana Sampatha",
+  mgap: "Mega Power",
+  jaya: "NLB Jaya",
+  suba: "Suba Dawasak",
+};
 const normalizeLotteryCode = (value) => {
   const normalized = String(value || "").trim().toLowerCase();
   if (normalized === "ada" || normalized.includes("ada sampatha")) return "ada";
@@ -101,6 +110,7 @@ const SplitPage = () => {
   const [splitting, setSplitting] = useState(false);
   const [error, setError] = useState("");
 
+
   // Special split states
   const [specialSplits, setSpecialSplits] = useState([]);
   const [showSpecialModal, setShowSpecialModal] = useState(false);
@@ -110,6 +120,8 @@ const SplitPage = () => {
   const [hasInitialSplit, setHasInitialSplit] = useState(false);
   const [remainingCounts, setRemainingCounts] = useState([]);
   const [loadingRemaining, setLoadingRemaining] = useState(false);
+  const [specialFilterType, setSpecialFilterType] = useState("all");
+  const [specialFilterValue, setSpecialFilterValue] = useState(null);
 
   const [messageApi, messageContextHolder] = message.useMessage();
   const [modalApi, modalContextHolder] = Modal.useModal();
@@ -256,7 +268,41 @@ const SplitPage = () => {
     }
   };
 
-    const loadRemainingCounts = async (date, agentName) => {
+  const filteredSpecialSplits = useMemo(() => {
+    if (specialFilterType === "by_split" && specialFilterValue) {
+      return specialSplits.filter((s) => s.label === specialFilterValue);
+    }
+    if (specialFilterType === "by_lottery" && specialFilterValue) {
+      return specialSplits.filter(
+        (s) => normalizeLotteryCode(s.lottery_code) === specialFilterValue
+      );
+    }
+    return specialSplits;
+  }, [specialSplits, specialFilterType, specialFilterValue]);
+
+   // Unique labels for split filter
+  const uniqueSplitLabels = useMemo(() => {
+    const labels = specialSplits.map((s) => s.label);
+    return [...new Set(labels)];
+  }, [specialSplits]);
+
+  // Options for second dropdown
+  const filterValueOptions = useMemo(() => {
+    if (specialFilterType === "by_split") {
+      return uniqueSplitLabels.map((label) => ({ value: label, label }));
+    }
+    if (specialFilterType === "by_lottery") {
+      return LOTTERY_ORDER.map((code) => ({
+        value: code,
+        label: LOTTERY_NAME_MAP[code] || code,
+      }));
+    }
+    return [];
+  }, [specialFilterType, uniqueSplitLabels]);
+
+
+
+  const loadRemainingCounts = async (date, agentName) => {
     setLoadingRemaining(true);
     try {
       const res = await getSpecialSplitsRemaining(agentName, date);
@@ -315,8 +361,15 @@ const SplitPage = () => {
   };
 
   const handleDownloadSpecialZip = async () => {
+    const options = {};
+    if (specialFilterType === "by_split" && specialFilterValue) {
+      options.splitLabel = specialFilterValue;
+    }
+    if (specialFilterType === "by_lottery" && specialFilterValue) {
+      options.lotteryCode = specialFilterValue;
+    }
     try {
-      const res = await downloadSpecialZip(agent, selectedDate);
+      const res = await downloadSpecialZip(agent, selectedDate, options);
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement("a");
       a.href = url;
@@ -1177,140 +1230,164 @@ const SplitPage = () => {
             </Card>
 
             {/* Special Splits Card */}
-            <Card
-              className="split-section-card special-splits-card"
-              bordered={false}
-              title={
-                <Space size={10}>
-                  <div className="section-icon">
-                    <ScissorOutlined />
-                  </div>
-                  <div>
-                    <Text strong style={{ display: "block", fontSize: 16 }}>
-                      Special Splits
-                    </Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      Create sub‑splits from the initial agent split
-                    </Text>
-                  </div>
-                </Space>
-              }
-              extra={
-                <Space size={12} wrap>
-                  {hasInitialSplit && (
-                    <Tag color="green" style={{ margin: 0 }}>
-                      Available: {totalRemaining.toLocaleString()}
-                    </Tag>
-                  )}
-                  <Button
-                    icon={<DownloadOutlined />}
-                    onClick={handleDownloadSpecialZip}
-                    disabled={!specialSplits.length}
+                  <Card
+                    className="split-section-card special-splits-card"
+                    bordered={false}
+                    title={
+                      <Space size={10}>
+                        <div className="section-icon">
+                          <ScissorOutlined />
+                        </div>
+                        <div>
+                          <Text strong style={{ display: "block", fontSize: 16 }}>
+                            Special Splits
+                          </Text>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            Create sub‑splits from the initial agent split
+                          </Text>
+                        </div>
+                      </Space>
+                    }
+                    extra={
+                      <Space size={12} wrap>
+                        {/* Filter dropdowns */}
+                        <Select
+                          value={specialFilterType}
+                          onChange={(val) => {
+                            setSpecialFilterType(val);
+                            setSpecialFilterValue(null);
+                          }}
+                          style={{ width: 150 }}
+                          options={[
+                            { value: "all", label: "All Splits" },
+                            { value: "by_split", label: "By Special Split" },
+                            { value: "by_lottery", label: "By Lottery" },
+                          ]}
+                        />
+                        {specialFilterType !== "all" && (
+                          <Select
+                            value={specialFilterValue}
+                            onChange={setSpecialFilterValue}
+                            style={{ width: 180 }}
+                            placeholder="Select value"
+                            options={filterValueOptions}
+                          />
+                        )}
+
+                        {hasInitialSplit && (
+                          <Tag color="green" style={{ margin: 0 }}>
+                            Available: {totalRemaining.toLocaleString()}
+                          </Tag>
+                        )}
+                        <Button
+                          icon={<DownloadOutlined />}
+                          onClick={handleDownloadSpecialZip}
+                          disabled={!filteredSpecialSplits.length}
+                        >
+                          Special ZIP
+                        </Button>
+                        <Button
+                          icon={<DownloadOutlined />}
+                          onClick={handleDownloadRemainingZip}
+                          disabled={totalRemaining === 0}
+                        >
+                          Remaining ZIP
+                        </Button>
+                        <Button
+                          type="primary"
+                          icon={<ScissorOutlined />}
+                          onClick={() => setShowSpecialModal(true)}
+                          disabled={!assignedCounts.length || !hasInitialSplit}
+                        >
+                          + Create Special Split
+                        </Button>
+                      </Space>
+                    }
+                    style={{ marginTop: 20 }}
                   >
-                    Special ZIP
-                  </Button>
-                  <Button
-                    icon={<DownloadOutlined />}
-                    onClick={handleDownloadRemainingZip}
-                    disabled={totalRemaining === 0}
-                  >
-                    Remaining ZIP
-                  </Button>
-                  <Button
-                    type="primary"
-                    icon={<ScissorOutlined />}
-                    onClick={() => setShowSpecialModal(true)}
-                    disabled={!assignedCounts.length || !hasInitialSplit}
-                  >
-                    + Create Special Split
-                  </Button>
-                </Space>
-              }
-              style={{ marginTop: 20 }}
-            >
-              <Table
-                rowKey={(record) => record.id}
-                dataSource={specialSplits}
-                loading={loadingSpecials || loadingRemaining}
-                pagination={false}
-                size="middle"
-                locale={{
-                  emptyText: (
-                    <Empty
-                      image={Empty.PRESENTED_IMAGE_SIMPLE}
-                      description={
-                        hasInitialSplit
-                          ? "No special splits created yet"
-                          : "Initial split must be done first"
-                      }
+                    <Table
+                      rowKey={(record) => record.id}
+                      dataSource={filteredSpecialSplits}
+                      loading={loadingSpecials || loadingRemaining}
+                      pagination={{ pageSize: 10, showSizeChanger: false }}
+                      size="middle"
+                      locale={{
+                        emptyText: (
+                          <Empty
+                            image={Empty.PRESENTED_IMAGE_SIMPLE}
+                            description={
+                              hasInitialSplit
+                                ? "No special splits match the filter"
+                                : "Initial split must be done first"
+                            }
+                          />
+                        ),
+                      }}
+                      columns={[
+                        {
+                          title: "#",
+                          key: "index",
+                          width: 50,
+                          align: "center",
+                          render: (_, __, index) => <Text type="secondary">{index + 1}</Text>,
+                        },
+                        {
+                          title: "Label",
+                          dataIndex: "label",
+                          key: "label",
+                          render: (value) => <Tag color="geekblue">{value}</Tag>,
+                        },
+                        {
+                          title: "Lottery",
+                          dataIndex: "lottery_name",
+                          key: "lottery_name",
+                        },
+                        {
+                          title: "Draw",
+                          dataIndex: "draw_number",
+                          key: "draw_number",
+                        },
+                        {
+                          title: "Records",
+                          dataIndex: "record_count",
+                          key: "record_count",
+                          align: "right",
+                          render: (value) => <Text strong>{Number(value || 0).toLocaleString()}</Text>,
+                        },
+                        {
+                          title: "Serial Range",
+                          key: "serial",
+                          render: (_, record) => (
+                            <Text code>
+                              {record.start_serial} – {record.end_serial}
+                            </Text>
+                          ),
+                        },
+                        {
+                          title: "Download",
+                          key: "download",
+                          align: "center",
+                          render: (_, record) => (
+                            <Button
+                              type="link"
+                              onClick={() => {
+                                downloadSpecialFile(record.session_id, record.filename).then((res) => {
+                                  const url = window.URL.createObjectURL(new Blob([res.data]));
+                                  const a = document.createElement("a");
+                                  a.href = url;
+                                  a.download = record.filename;
+                                  a.click();
+                                  window.URL.revokeObjectURL(url);
+                                });
+                              }}
+                            >
+                              Download
+                            </Button>
+                          ),
+                        },
+                      ]}
                     />
-                  ),
-                }}
-                columns={[
-                  {
-                    title: "#",
-                    key: "index",
-                    width: 50,
-                    align: "center",
-                    render: (_, __, index) => <Text type="secondary">{index + 1}</Text>,
-                  },
-                  {
-                    title: "Label",
-                    dataIndex: "label",
-                    key: "label",
-                    render: (value) => <Tag color="geekblue">{value}</Tag>,
-                  },
-                  {
-                    title: "Lottery",
-                    dataIndex: "lottery_name",
-                    key: "lottery_name",
-                  },
-                  {
-                    title: "Draw",
-                    dataIndex: "draw_number",
-                    key: "draw_number",
-                  },
-                  {
-                    title: "Records",
-                    dataIndex: "record_count",
-                    key: "record_count",
-                    align: "right",
-                    render: (value) => <Text strong>{Number(value || 0).toLocaleString()}</Text>,
-                  },
-                  {
-                    title: "Serial Range",
-                    key: "serial",
-                    render: (_, record) => (
-                      <Text code>
-                        {record.start_serial} – {record.end_serial}
-                      </Text>
-                    ),
-                  },
-                  {
-                    title: "Download",
-                    key: "download",
-                    align: "center",
-                    render: (_, record) => (
-                      <Button
-                        type="link"
-                        onClick={() => {
-                          downloadSpecialFile(record.session_id, record.filename).then((res) => {
-                            const url = window.URL.createObjectURL(new Blob([res.data]));
-                            const a = document.createElement("a");
-                            a.href = url;
-                            a.download = record.filename;
-                            a.click();
-                            window.URL.revokeObjectURL(url);
-                          });
-                        }}
-                      >
-                        Download
-                      </Button>
-                    ),
-                  },
-                ]}
-              />
-            </Card>
+                  </Card>
           </>
         )}
       </div>
