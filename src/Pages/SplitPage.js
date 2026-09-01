@@ -256,7 +256,7 @@ const SplitPage = () => {
     }
   };
 
-  const loadRemainingCounts = async (date, agentName) => {
+    const loadRemainingCounts = async (date, agentName) => {
     setLoadingRemaining(true);
     try {
       const res = await getSpecialSplitsRemaining(agentName, date);
@@ -273,7 +273,12 @@ const SplitPage = () => {
         };
       });
 
-      setRemainingCounts(enrichedRemaining);
+      // Sort according to LOTTERY_ORDER
+      const sortedEnriched = [...enrichedRemaining].sort((a, b) => {
+        return getSortedIndex(a.lottery_code) - getSortedIndex(b.lottery_code);
+      });
+
+      setRemainingCounts(sortedEnriched);
     } catch {
       setRemainingCounts([]);
     } finally {

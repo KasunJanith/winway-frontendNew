@@ -94,9 +94,14 @@ export const downloadSpecialFile = (sessionId, filename) =>
     params: { agent_name: agentName, date },
   });
 
-export const downloadSpecialZip = (agentName, date) =>
+export const downloadSpecialZip = (agentName, date, options = {}) =>
   api.get('/download-special-zip', {
-    params: { agent_name: agentName, date },
+    params: {
+      agent_name: agentName,
+      date,
+      split_label: options.splitLabel,
+      lottery_code: options.lotteryCode,
+    },
     responseType: 'blob',
   });
 
