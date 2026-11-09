@@ -106,25 +106,34 @@ const OrderEntry = () => {
       const response = await getOrders(date);
       const orderData = Array.isArray(response.data) ? response.data : [];
 
-      const sortedOrders = [...orderData].sort((a, b) => {
-        const codeA = String(a.lottery_code || "").toLowerCase();
-        const codeB = String(b.lottery_code || "").toLowerCase();
+      const sortedOrders = [...orderData].sort((a, b) =>
+        String(a.lottery_name || a.lottery_code || "")
+          .localeCompare(String(b.lottery_name || b.lottery_code || ""), undefined, {
+            sensitivity: "base",
+          })
+      );
 
-        const indexA = LOTTERY_ORDER.indexOf(codeA);
-        const indexB = LOTTERY_ORDER.indexOf(codeB);
-
-        const safeIndexA = indexA === -1 ? LOTTERY_ORDER.length : indexA;
-
-        const safeIndexB = indexB === -1 ? LOTTERY_ORDER.length : indexB;
-
-        return safeIndexA - safeIndexB;
+      const normalizedOrders = sortedOrders.map((order) => {
+        const bulks = Array.isArray(order.bulks) && order.bulks.length
+          ? order.bulks.map((b) => ({
+              bulk_number: b.bulk_number || 1,
+              quantity: Number(b.quantity || 0),
+              label: b.label || (b.bulk_number === 1 ? "Initial" : `Bulk ${b.bulk_number}`),
+            }))
+          : [{ bulk_number: 1, quantity: Number(order.quantity || 0), label: "Initial" }];
+        // ensure initial exists
+        if (!bulks.some((b) => b.bulk_number === 1)) {
+          bulks.unshift({ bulk_number: 1, quantity: 0, label: "Initial" });
+        }
+        bulks.sort((a, b) => a.bulk_number - b.bulk_number);
+        const total = bulks.reduce((s, b) => s + Number(b.quantity || 0), 0);
+        return {
+          ...order,
+          draw_number: order.draw_number || "",
+          quantity: total,
+          bulks,
+        };
       });
-
-      const normalizedOrders = sortedOrders.map((order) => ({
-        ...order,
-        draw_number: order.draw_number || "",
-        quantity: Number(order.quantity || 0),
-      }));
 
       setOrders(normalizedOrders);
     } catch (err) {
@@ -144,6 +153,27 @@ const OrderEntry = () => {
 
     setSelectedDate(formattedDate);
     await loadOrders(formattedDate);
+    // Always refresh draw numbers for the newly selected date (including new lotteries)
+    try {
+      const response = await getDrawNumbers(formattedDate);
+      const drawNumbers = Array.isArray(response.data) ? response.data : [];
+      setOrders((previousOrders) =>
+        previousOrders.map((order) => {
+          const currentCode = String(order.lottery_code || "").toLowerCase();
+          const match = drawNumbers.find((draw) => {
+            const drawCode = String(draw.lottery_code || "").toLowerCase();
+            return drawCode === currentCode;
+          });
+          // Overwrite with date-correct draw number when available
+          if (match && match.draw_number) {
+            return { ...order, draw_number: match.draw_number };
+          }
+          return order;
+        })
+      );
+    } catch (err) {
+      console.error("Auto draw fill on date change failed:", err);
+    }
   };
 
   const handleAutoFillDrawNumbers = async () => {
@@ -222,17 +252,34 @@ const OrderEntry = () => {
       const quantityMap = {};
       previousOrders.forEach((prevOrder) => {
         const code = String(prevOrder.lottery_code || "").toLowerCase();
-        quantityMap[code] = Number(prevOrder.quantity || 0);
+        // Prefer full bulks array from API
+        if (Array.isArray(prevOrder.bulks) && prevOrder.bulks.length) {
+          quantityMap[code] = prevOrder.bulks.map((b) => ({
+            bulk_number: b.bulk_number || 1,
+            quantity: Number(b.quantity || 0),
+            label: b.label || (b.bulk_number === 1 ? "Initial" : `Bulk ${b.bulk_number}`),
+          }));
+        } else {
+          quantityMap[code] = [
+            {
+              bulk_number: 1,
+              quantity: Number(prevOrder.quantity || 0),
+              label: "Initial",
+            },
+          ];
+        }
       });
 
       setOrders((currentOrders) =>
         currentOrders.map((order) => {
           const code = String(order.lottery_code || "").toLowerCase();
-          const previousQuantity = quantityMap[code];
-
+          const prevBulks = quantityMap[code];
+          if (!prevBulks) return order;
+          const total = prevBulks.reduce((s, b) => s + Number(b.quantity || 0), 0);
           return {
             ...order,
-            quantity: previousQuantity !== undefined ? previousQuantity : order.quantity,
+            bulks: prevBulks.map((b) => ({ ...b })),
+            quantity: total,
           };
         }),
       );
@@ -260,18 +307,56 @@ const OrderEntry = () => {
     );
   };
 
-  const handleQuantityChange = (lotteryCode, value) => {
-    const quantity = Number(value || 0);
-
+  const handleQuantityChange = (lotteryCode, value, bulkNumber = 1) => {
+    const quantity = Math.max(Number(value || 0), 0);
     setOrders((previousOrders) =>
-      previousOrders.map((order) =>
-        order.lottery_code === lotteryCode
-          ? {
-              ...order,
-              quantity: Math.max(quantity, 0),
-            }
-          : order,
-      ),
+      previousOrders.map((order) => {
+        if (order.lottery_code !== lotteryCode) return order;
+        let bulks = Array.isArray(order.bulks) ? [...order.bulks] : [];
+        if (!bulks.some((b) => b.bulk_number === 1)) {
+          bulks.unshift({ bulk_number: 1, quantity: 0, label: "Initial" });
+        }
+        const idx = bulks.findIndex((b) => b.bulk_number === bulkNumber);
+        if (idx >= 0) {
+          bulks[idx] = { ...bulks[idx], quantity };
+        } else {
+          bulks.push({
+            bulk_number: bulkNumber,
+            quantity,
+            label: bulkNumber === 1 ? "Initial" : `Bulk ${bulkNumber}`,
+          });
+        }
+        bulks.sort((a, b) => a.bulk_number - b.bulk_number);
+        const total = bulks.reduce((s, b) => s + Number(b.quantity || 0), 0);
+        return { ...order, bulks, quantity: total };
+      }),
+    );
+  };
+
+  const handleAddBulk = (lotteryCode) => {
+    setOrders((previousOrders) =>
+      previousOrders.map((order) => {
+        if (order.lottery_code !== lotteryCode) return order;
+        let bulks = Array.isArray(order.bulks) ? [...order.bulks] : [
+          { bulk_number: 1, quantity: Number(order.quantity || 0), label: "Initial" },
+        ];
+        const maxBn = bulks.reduce((m, b) => Math.max(m, b.bulk_number || 1), 1);
+        const next = maxBn + 1;
+        bulks.push({ bulk_number: next, quantity: 0, label: `Bulk ${next}` });
+        return { ...order, bulks };
+      }),
+    );
+  };
+
+  const handleRemoveBulk = (lotteryCode, bulkNumber) => {
+    if (bulkNumber <= 1) return;
+    setOrders((previousOrders) =>
+      previousOrders.map((order) => {
+        if (order.lottery_code !== lotteryCode) return order;
+        const bulks = (order.bulks || []).filter((b) => b.bulk_number !== bulkNumber);
+        const total = bulks.reduce((s, b) => s + Number(b.quantity || 0), 0);
+        return { ...order, bulks, quantity: total };
+      }),
     );
   };
 
@@ -343,11 +428,19 @@ const OrderEntry = () => {
 
     const payload = {
       order_date: selectedDate,
-      orders: orders.map((order) => ({
-        lottery_code: order.lottery_code,
-        draw_number: String(order.draw_number || "").trim(),
-        quantity: Number(order.quantity || 0),
-      })),
+      orders: orders.flatMap((order) => {
+        const bulks = Array.isArray(order.bulks) && order.bulks.length
+          ? order.bulks
+          : [{ bulk_number: 1, quantity: Number(order.quantity || 0) }];
+        return bulks
+          .filter((b) => Number(b.quantity || 0) > 0)
+          .map((b) => ({
+            lottery_code: order.lottery_code,
+            draw_number: String(order.draw_number || "").trim(),
+            quantity: Number(b.quantity || 0),
+            bulk_number: b.bulk_number || 1,
+          }));
+      }),
     };
 
     try {
@@ -483,34 +576,56 @@ const OrderEntry = () => {
       },
     },
     {
-      title: "Quantity",
-      dataIndex: "quantity",
-      key: "quantity",
-      width: 220,
-      align: "right",
-      render: (value, record) => (
-        <InputNumber
-          min={0}
-          precision={0}
-          value={value}
-          placeholder="0"
-          controls
-          formatter={(currentValue) =>
-            currentValue
-              ? String(currentValue).replace(/\B(?=(\d{3})+(?!\d))/g, ",")
-              : ""
-          }
-          parser={(currentValue) =>
-            currentValue ? currentValue.replace(/,/g, "") : ""
-          }
-          onChange={(newValue) =>
-            handleQuantityChange(record.lottery_code, newValue)
-          }
-          style={{
-            width: 150,
-          }}
-        />
-      ),
+      title: "Quantities (Initial + Bulks)",
+      key: "quantities",
+      width: 420,
+      render: (_, record) => {
+        const bulks = Array.isArray(record.bulks) && record.bulks.length
+          ? record.bulks
+          : [{ bulk_number: 1, quantity: Number(record.quantity || 0), label: "Initial" }];
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {bulks.map((b) => (
+              <Space key={b.bulk_number} size={6} wrap>
+                <Tag color={b.bulk_number === 1 ? "blue" : "purple"} style={{ minWidth: 64, textAlign: "center" }}>
+                  {b.bulk_number === 1 ? "Initial" : `Bulk ${b.bulk_number}`}
+                </Tag>
+                <InputNumber
+                  min={0}
+                  precision={0}
+                  value={b.quantity}
+                  placeholder="0"
+                  controls
+                  formatter={(v) => (v ? String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ",") : "")}
+                  parser={(v) => (v ? v.replace(/,/g, "") : "")}
+                  onChange={(val) =>
+                    handleQuantityChange(record.lottery_code, val, b.bulk_number)
+                  }
+                  style={{ width: 120 }}
+                />
+                {b.bulk_number > 1 && (
+                  <Button
+                    size="small"
+                    type="text"
+                    danger
+                    onClick={() => handleRemoveBulk(record.lottery_code, b.bulk_number)}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </Space>
+            ))}
+            <Space size={8}>
+              <Button size="small" type="dashed" onClick={() => handleAddBulk(record.lottery_code)}>
+                + Add bulk
+              </Button>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Total: <Text strong>{Number(record.quantity || 0).toLocaleString()}</Text>
+              </Text>
+            </Space>
+          </div>
+        );
+      },
     },
     {
       title: "Status",

@@ -22,6 +22,7 @@ import {
   Tag,
   Tooltip,
   Typography,
+  Spin,
 } from "antd";
 
 import {
@@ -57,11 +58,14 @@ import {
   downloadSpecialZip,
   downloadRemainingZip,
   getSplitsByDate,
+  listSessionsByDate,
+  getOrderBulks,
+  getAgentSplits,
 } from "./api/index";
 
 const { Title, Text } = Typography;
 
-const LOTTERY_ORDER = [
+const DEFAULT_LOTTERY_ORDER = [
   "ada", "dana", "govi", "hada", "maha", "mgap", "jaya", "suba",
 ];
 
@@ -74,6 +78,53 @@ const LOTTERY_NAME_MAP = {
   mgap: "Mega Power",
   jaya: "NLB Jaya",
   suba: "Suba Dawasak",
+};
+
+/** Collect unique lottery codes from live data, sorted alphabetically by display name/code. */
+const buildLotteryOrder = (...lists) => {
+  const byCode = new Map(); // code -> display label for sorting
+  const add = (code, label) => {
+    const c = normalizeLotteryCode(code);
+    if (!c) return;
+    if (!byCode.has(c)) {
+      byCode.set(c, String(label || LOTTERY_NAME_MAP[c] || c).trim());
+    }
+  };
+  // defaults first so name map is available
+  DEFAULT_LOTTERY_ORDER.forEach((code) => add(code, LOTTERY_NAME_MAP[code] || code));
+  lists.flat().forEach((item) => {
+    if (!item) return;
+    if (typeof item === "string") {
+      add(item, LOTTERY_NAME_MAP[normalizeLotteryCode(item)] || item);
+    } else {
+      const code = item.lottery_code || item.code || item.lottery_name;
+      const label =
+        item.lottery_name ||
+        item.displayName ||
+        item.name ||
+        LOTTERY_NAME_MAP[normalizeLotteryCode(code)] ||
+        code;
+      add(code, label);
+    }
+  });
+  return [...byCode.entries()]
+    .sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: "base" }))
+    .map(([code]) => code);
+};
+
+/** Alphabetical compare for lottery rows (by name, then code). */
+const compareLotteriesAlpha = (a, b) => {
+  const nameA = String(
+    a?.lottery_name || a?.displayName || a?.name || LOTTERY_NAME_MAP[normalizeLotteryCode(a?.lottery_code || a)] || a?.lottery_code || a || ""
+  ).trim();
+  const nameB = String(
+    b?.lottery_name || b?.displayName || b?.name || LOTTERY_NAME_MAP[normalizeLotteryCode(b?.lottery_code || b)] || b?.lottery_code || b || ""
+  ).trim();
+  const byName = nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+  if (byName !== 0) return byName;
+  const codeA = normalizeLotteryCode(a?.lottery_code || a?.code || a);
+  const codeB = normalizeLotteryCode(b?.lottery_code || b?.code || b);
+  return codeA.localeCompare(codeB, undefined, { sensitivity: "base" });
 };
 
 const normalizeLotteryCode = (value) => {
@@ -89,11 +140,23 @@ const normalizeLotteryCode = (value) => {
   return normalized;
 };
 
-const getSortedIndex = (value) => {
-  const code = normalizeLotteryCode(value);
-  const index = LOTTERY_ORDER.indexOf(code);
-  return index === -1 ? LOTTERY_ORDER.length : index;
+const getLotterySortKey = (value) => {
+  const code = normalizeLotteryCode(
+    typeof value === "object"
+      ? value?.lottery_code || value?.lottery_name || value?.code
+      : value
+  );
+  const name =
+    (typeof value === "object" && (value?.lottery_name || value?.displayName || value?.name)) ||
+    LOTTERY_NAME_MAP[code] ||
+    code;
+  return String(name || code).toLowerCase();
 };
+
+const getSortedIndex = (value) => getLotterySortKey(value); // legacy name; string key used with localeCompare
+
+const remainingKey = (item) =>
+  `${normalizeLotteryCode(item.lottery_code)}::bulk${item.bulk_number || 1}`;
 
 const getSplitLabelNumber = (label) => {
   const match = String(label || "").match(/(\d+)/);
@@ -106,6 +169,8 @@ const SplitPage = () => {
   const [selectedDate, setSelectedDate] = useState("");
   const [agent, setAgent] = useState("JAYAWAY");
   const [sessionId, setSessionId] = useState(null);
+  const [bulkSessions, setBulkSessions] = useState([]);
+  const [orderBulks, setOrderBulks] = useState([]);
   const [lotteries, setLotteries] = useState([]);
   const [assignedCounts, setAssignedCounts] = useState([]);
   const [validation, setValidation] = useState(null);
@@ -187,20 +252,71 @@ const SplitPage = () => {
     setLoading(true);
     setError("");
     try {
-      await Promise.all([loadSession(date), loadValidation(date)]);
+      // Session first, then validate THAT bulk only (Initial can split before Bulk 2 is uploaded)
+      const sid = await loadSession(date);
+      await loadValidation(date, sid || null);
+      if (agent && sid) {
+        try {
+          const aRes = await getAssignedCounts(agent, date, { sessionId: sid });
+          const assignmentData = Array.isArray(aRes.data) ? aRes.data : [];
+          setAssignedCounts(
+            [...assignmentData]
+              .sort((a, b) =>
+                getLotterySortKey(a).localeCompare(getLotterySortKey(b), undefined, {
+                  sensitivity: "base",
+                })
+              )
+              .map((item) => ({
+                ...item,
+                available_quantity: Number(item.available_quantity || 0),
+                assigned_count: Number(item.assigned_count || 0),
+              }))
+          );
+        } catch (e) {
+          console.error(e);
+        }
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const loadSession = async (date) => {
+  const loadSession = async (date, preferredSessionId = null) => {
     try {
-      const sessionResponse = await getSessionByDate(date);
-      const foundSessionId = sessionResponse.data?.session_id;
+      try {
+        const bulkRes = await getOrderBulks(date);
+        setOrderBulks(bulkRes.data?.bulks || []);
+      } catch (e) {
+        setOrderBulks([]);
+      }
+
+      let sessions = [];
+      try {
+        const listRes = await listSessionsByDate(date);
+        sessions = listRes.data?.sessions || [];
+      } catch (e) {
+        sessions = [];
+      }
+      setBulkSessions(sessions);
+
+      let foundSessionId = preferredSessionId;
+      if (!foundSessionId) {
+        if (sessions.length) {
+          // Prefer Initial (bulk 1) so user can split it before later bulks are uploaded
+          const initial = sessions.find((s) => Number(s.bulk_number || 1) === 1);
+          foundSessionId = initial
+            ? initial.session_id
+            : sessions[0].session_id;
+        } else {
+          const sessionResponse = await getSessionByDate(date);
+          foundSessionId = sessionResponse.data?.session_id;
+        }
+      }
+
       if (!foundSessionId) {
         setSessionId(null);
         setLotteries([]);
-        return;
+        return null;
       }
       setSessionId(foundSessionId);
       const lotteryResponse = await getSessionLotteries(foundSessionId);
@@ -208,19 +324,24 @@ const SplitPage = () => {
       const sortedLotteries = [...lotteryData].sort((a, b) => {
         const valueA = a.lottery_code || a.lottery_name;
         const valueB = b.lottery_code || b.lottery_name;
-        return getSortedIndex(valueA) - getSortedIndex(valueB);
+        return getLotterySortKey(valueA).localeCompare(getLotterySortKey(valueB), undefined, { sensitivity: "base" });
       });
       setLotteries(sortedLotteries);
+      return foundSessionId;
     } catch (err) {
       console.error("Failed to load upload session:", err);
       setSessionId(null);
       setLotteries([]);
+      setBulkSessions([]);
+      return null;
     }
   };
 
-  const loadValidation = async (date) => {
+  const loadValidation = async (date, sid = null) => {
     try {
-      const response = await validateUpload(date);
+      const response = await validateUpload(date, {
+        sessionId: sid || sessionId || undefined,
+      });
       setValidation(response.data || null);
     } catch (err) {
       console.error("Failed to validate upload:", err);
@@ -232,12 +353,12 @@ const SplitPage = () => {
     if (!date || !agentName) return;
     setLoadingAssignments(true);
     try {
-      const response = await getAssignedCounts(agentName, date);
+      const response = await getAssignedCounts(agentName, date, { sessionId: sessionId || undefined });
       const assignmentData = Array.isArray(response.data) ? response.data : [];
       const sortedAssignments = [...assignmentData].sort((a, b) => {
         const valueA = a.lottery_code || a.lottery_name;
         const valueB = b.lottery_code || b.lottery_name;
-        return getSortedIndex(valueA) - getSortedIndex(valueB);
+        return getLotterySortKey(valueA).localeCompare(getLotterySortKey(valueB), undefined, { sensitivity: "base" });
       });
       setAssignedCounts(
         sortedAssignments.map((item) => ({
@@ -267,10 +388,18 @@ const SplitPage = () => {
     }
   };
 
-  const checkInitialSplit = async (date, agentName) => {
+  const checkInitialSplit = async (date, agentName, sid = null) => {
     try {
+      const targetSid = sid || sessionId;
+      if (targetSid) {
+        const res = await getAgentSplits(targetSid, agentName);
+        const data = Array.isArray(res.data) ? res.data : [];
+        setHasInitialSplit(data.length > 0);
+        return;
+      }
+      // Fallback: any split for the date
       const res = await getSplitsByDate(agentName, date);
-      setHasInitialSplit(res.data && res.data.length > 0);
+      setHasInitialSplit(Array.isArray(res.data) && res.data.length > 0);
     } catch {
       setHasInitialSplit(false);
     }
@@ -298,9 +427,9 @@ const SplitPage = () => {
       return uniqueSplitLabels.map((label) => ({ value: label, label }));
     }
     if (specialFilterType === "by_lottery") {
-      return LOTTERY_ORDER.map((code) => ({
+      return buildLotteryOrder(assignedCounts, remainingCounts, specialSplits).map((code) => ({
         value: code,
-        label: LOTTERY_NAME_MAP[code] || code,
+        label: LOTTERY_NAME_MAP[code] || code.toUpperCase(),
       }));
     }
     return [];
@@ -324,7 +453,7 @@ const SplitPage = () => {
       });
 
       const sortedEnriched = [...enrichedRemaining].sort((a, b) => {
-        return getSortedIndex(a.lottery_code) - getSortedIndex(b.lottery_code);
+        return getLotterySortKey(a.lottery_code).localeCompare(getLotterySortKey(b.lottery_code), undefined, { sensitivity: "base" });
       });
 
       setRemainingCounts(sortedEnriched);
@@ -335,9 +464,26 @@ const SplitPage = () => {
     }
   };
 
+  // Special-split rows for the currently selected bulk/session only
+  const remainingForSelectedBulk = useMemo(() => {
+    if (!sessionId) return remainingCounts;
+    const forSession = remainingCounts.filter((r) => r.session_id === sessionId);
+    // If nothing matched (old data without session_id), fall back to bulk_number from bulkSessions
+    if (forSession.length) return forSession;
+    const sess = (bulkSessions || []).find((s) => s.session_id === sessionId);
+    if (sess) {
+      const bn = Number(sess.bulk_number || 1);
+      return remainingCounts.filter((r) => Number(r.bulk_number || 1) === bn);
+    }
+    return remainingCounts;
+  }, [remainingCounts, sessionId, bulkSessions]);
+
   const totalRemaining = useMemo(() => {
-    return remainingCounts.reduce((sum, item) => sum + Number(item.remaining_count || 0), 0);
-  }, [remainingCounts]);
+    return remainingForSelectedBulk.reduce(
+      (sum, item) => sum + Number(item.remaining_count || 0),
+      0
+    );
+  }, [remainingForSelectedBulk]);
 
   const totalSpecialTake = useMemo(() => {
     return Object.values(specialCounts).reduce(
@@ -420,7 +566,12 @@ const SplitPage = () => {
     return (
       validation.mismatches.find((item) => {
         const mismatchCode = normalizeLotteryCode(item.lottery_code || item.lottery_name);
-        return mismatchCode === targetCode;
+        if (mismatchCode !== targetCode) return false;
+        // Ignore false positives where counts already match
+        if (item.count_match && item.draw_match) return false;
+        const diff = Number(item.difference);
+        if (!Number.isNaN(diff) && diff === 0 && item.draw_match !== false) return false;
+        return true;
       }) || null
     );
   };
@@ -481,51 +632,80 @@ const SplitPage = () => {
       }
     );
 
-    const rows = LOTTERY_ORDER.map((code) => {
-      const lotterySplits = filteredSpecialSplits.filter(
-        (s) => normalizeLotteryCode(s.lottery_code) === code
-      );
+    // One row per remaining entry (lottery × bulk), alphabetical by name then bulk
+    let baseRows = remainingForSelectedBulk.length
+      ? remainingForSelectedBulk
+      : assignedCounts.map((a) => ({
+          lottery_code: a.lottery_code,
+          lottery_name: a.lottery_name,
+          original_assigned: a.assigned_count,
+          remaining_count: a.assigned_count,
+          draw_number: a.draw_number,
+          bulk_number: 1,
+          session_id: sessionId,
+        }));
 
-      const lotteryName =
-        lotterySplits[0]?.lottery_name || LOTTERY_NAME_MAP[code] || code;
+    const rows = baseRows
+      .map((remainingItem) => {
+        const code = normalizeLotteryCode(remainingItem.lottery_code);
+        const bulk = remainingItem.bulk_number || 1;
+        const lotterySplits = filteredSpecialSplits.filter(
+          (s) =>
+            normalizeLotteryCode(s.lottery_code) === code &&
+            Number(s.bulk_number || 1) === Number(bulk)
+        );
 
-      const remainingItem = remainingCounts.find(
-        (r) => normalizeLotteryCode(r.lottery_code) === code
-      );
+        const lotteryName =
+          remainingItem.lottery_name ||
+          lotterySplits[0]?.lottery_name ||
+          assignedCounts.find((a) => normalizeLotteryCode(a.lottery_code) === code)
+            ?.lottery_name ||
+          LOTTERY_NAME_MAP[code] ||
+          code;
 
-      const assignmentItem = assignedCounts.find(
-        (a) => normalizeLotteryCode(a.lottery_code) === code
-      );
+        const assignmentItem = assignedCounts.find(
+          (a) => normalizeLotteryCode(a.lottery_code) === code
+        );
 
-      const drawNumber =
-        lotterySplits[0]?.draw_number ||
-        remainingItem?.draw_number ||
-        assignmentItem?.draw_number ||
-        "";
+        const drawNumber =
+          remainingItem.draw_number ||
+          lotterySplits[0]?.draw_number ||
+          assignmentItem?.draw_number ||
+          "";
 
-      const splitData = {};
-      labels.forEach((label) => {
-        const match = lotterySplits.find((s) => s.label === label);
-        splitData[label] = match || null;
+        const splitData = {};
+        labels.forEach((label) => {
+          const match = lotterySplits.find((s) => s.label === label);
+          splitData[label] = match || null;
+        });
+
+        return {
+          key: `${code}-bulk${bulk}`,
+          lottery_code: code,
+          lottery_name: lotteryName,
+          draw_number: drawNumber,
+          bulk_number: bulk,
+          session_id: remainingItem.session_id,
+          initial_assigned: Number(remainingItem.original_assigned || 0),
+          splitData,
+          remaining: Number(remainingItem.remaining_count || 0),
+        };
+      })
+      .filter((row) => {
+        if (specialFilterType === "by_lottery" && specialFilterValue) {
+          return row.lottery_code === specialFilterValue;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const byName = String(a.lottery_name || "").localeCompare(
+          String(b.lottery_name || ""),
+          undefined,
+          { sensitivity: "base" }
+        );
+        if (byName !== 0) return byName;
+        return (a.bulk_number || 1) - (b.bulk_number || 1);
       });
-
-      const initialAssigned = Number(remainingItem?.original_assigned || 0);
-
-      return {
-        key: code,
-        lottery_code: code,
-        lottery_name: lotteryName,
-        draw_number: drawNumber,
-        initial_assigned: initialAssigned,
-        splitData,
-        remaining: Number(remainingItem?.remaining_count || 0),
-      };
-    }).filter((row) => {
-      if (specialFilterType === "by_lottery" && specialFilterValue) {
-        return row.lottery_code === specialFilterValue;
-      }
-      return true;
-    });
 
     return { labels, rows };
   }, [
@@ -534,6 +714,7 @@ const SplitPage = () => {
     assignedCounts,
     specialFilterType,
     specialFilterValue,
+    sessionId,
   ]);
 
   const totalInitialInMatrix = useMemo(() => {
@@ -569,17 +750,33 @@ const SplitPage = () => {
         agent_name: agent,
         assignment_date: selectedDate,
       });
-      messageApi.success(`DBF files split successfully for ${agent}.`);
       await checkInitialSplit(selectedDate, agent);
       await loadSpecialSplits(selectedDate, agent);
       await loadRemainingCounts(selectedDate, agent);
-      navigate("/download");
+      messageApi.success(`DBF files split successfully for ${agent}.`);
+      modalApi.success({
+        title: "Split completed",
+        content: (
+          <div>
+            <p>
+              Files for <strong>{agent}</strong> on{" "}
+              <strong>{dayjs(selectedDate).format("DD MMM YYYY")}</strong> were
+              split successfully.
+            </p>
+            <p style={{ marginTop: 8 }}>
+              You can download them from the Download page or continue with
+              special splits here.
+            </p>
+          </div>
+        ),
+        okText: "Stay on this page",
+        centered: true,
+      });
     } catch (err) {
       console.error("Split failed:", err);
       const errorMessage =
         err.response?.data?.detail || err.response?.data?.message || "Split failed. Please try again.";
       messageApi.error(errorMessage);
-      throw err;
     } finally {
       setSplitting(false);
     }
@@ -626,7 +823,7 @@ const SplitPage = () => {
           <Alert
             type="info"
             showIcon
-            message="The generated files will be available on the download page."
+            message="After splitting you will stay on this page. Files are also available on the Download page."
             style={{ marginTop: 16, borderRadius: 10 }}
           />
         </div>
@@ -640,14 +837,16 @@ const SplitPage = () => {
   };
 
   const handleCreateSpecialSplit = () => {
-    const counts = remainingCounts
+    const selected = remainingForSelectedBulk
       .map((item) => ({
         lottery_code: item.lottery_code,
-        count: parseInt(specialCounts[item.lottery_code] || 0, 10),
+        bulk_number: item.bulk_number || 1,
+        session_id: item.session_id || sessionId,
+        count: parseInt(specialCounts[remainingKey(item)] || 0, 10),
       }))
       .filter((c) => c.count > 0);
 
-    if (counts.length === 0) {
+    if (selected.length === 0) {
       messageApi.warning("Enter at least one record count.");
       return;
     }
@@ -656,26 +855,24 @@ const SplitPage = () => {
       title: "Create special split?",
       icon: <ScissorOutlined style={{ color: "#722ed1" }} />,
       centered: true,
-      width: 480,
+      width: 520,
       content: (
         <div style={{ marginTop: 16 }}>
           <p>
-            You are about to create a <strong>Special Split</strong> with the following records:
+            You are about to create a <strong>Special Split</strong> with:
           </p>
           <ul style={{ paddingLeft: 20 }}>
-            {counts.map((c) => (
-              <li key={c.lottery_code}>
-                {normalizeLotteryCode(c.lottery_code).toUpperCase()}: <strong>{c.count}</strong>
+            {selected.map((c) => (
+              <li key={`${c.lottery_code}-${c.bulk_number}`}>
+                {normalizeLotteryCode(c.lottery_code).toUpperCase()}{" "}
+                <Tag color="purple">Bulk #{c.bulk_number}</Tag>:{" "}
+                <strong>{c.count}</strong>
               </li>
             ))}
           </ul>
           <p>
-            Total records to split: <strong>{counts.reduce((sum, c) => sum + c.count, 0)}</strong>
-          </p>
-          <p style={{ marginTop: 8 }}>
-            <Text type="secondary">
-              This will create a new special split (e.g., Special Split 1, 2, …) automatically.
-            </Text>
+            Total records:{" "}
+            <strong>{selected.reduce((sum, c) => sum + c.count, 0)}</strong>
           </p>
         </div>
       ),
@@ -684,12 +881,24 @@ const SplitPage = () => {
       onOk: async () => {
         setCreatingSpecial(true);
         try {
-          await createSpecialSplit({
-            session_id: sessionId,
-            agent_name: agent,
-            assignment_date: selectedDate,
-            counts,
+          // Group by session (bulk) — API is per session
+          const bySession = {};
+          selected.forEach((c) => {
+            const sid = c.session_id;
+            if (!bySession[sid]) bySession[sid] = [];
+            bySession[sid].push({
+              lottery_code: c.lottery_code,
+              count: c.count,
+            });
           });
+          for (const [sid, counts] of Object.entries(bySession)) {
+            await createSpecialSplit({
+              session_id: sid,
+              agent_name: agent,
+              assignment_date: selectedDate,
+              counts,
+            });
+          }
           messageApi.success("Special split created successfully.");
           setShowSpecialModal(false);
           setSpecialCounts({});
@@ -900,6 +1109,20 @@ const SplitPage = () => {
       ),
     },
     {
+      title: "Bulk",
+      key: "bulk_number",
+      width: 90,
+      align: "center",
+      render: (_, record) => {
+        const bn = Number(record.bulk_number || 1);
+        return (
+          <Tag color={bn === 1 ? "blue" : "purple"}>
+            {bn === 1 ? "Initial" : `Bulk ${bn}`}
+          </Tag>
+        );
+      },
+    },
+    {
       title: "Draw",
       dataIndex: "draw_number",
       key: "draw_number",
@@ -928,11 +1151,11 @@ const SplitPage = () => {
         <InputNumber
           min={0}
           max={record.remaining_count}
-          value={specialCounts[record.lottery_code] || null}
+          value={specialCounts[remainingKey(record)] || null}
           onChange={(val) =>
             setSpecialCounts((prev) => ({
               ...prev,
-              [record.lottery_code]: val,
+              [remainingKey(record)]: val,
             }))
           }
           style={{ width: 100 }}
@@ -944,7 +1167,7 @@ const SplitPage = () => {
       key: "new_remaining",
       align: "right",
       render: (_, record) => {
-        const take = Number(specialCounts[record.lottery_code] || 0);
+        const take = Number(specialCounts[remainingKey(record)] || 0);
         const remaining = Number(record.remaining_count || 0);
         const newRemaining = Math.max(remaining - take, 0);
         return (
@@ -961,7 +1184,14 @@ const SplitPage = () => {
       {messageContextHolder}
       {modalContextHolder}
 
-      <div className="split-page">
+      <div className={`split-page ${splitting ? "is-splitting" : ""}`}>
+      {splitting && (
+        <div className="splitting-overlay">
+          <Spin size="large" />
+          <Text strong style={{ fontSize: 16 }}>Splitting DBF files…</Text>
+          <Text type="secondary">Please wait, this may take a moment.</Text>
+        </div>
+      )}
         <Card className="split-header-card" bordered={false}>
           <Row gutter={[20, 20]} align="middle" justify="space-between">
             <Col>
@@ -994,6 +1224,133 @@ const SplitPage = () => {
             </Col>
           </Row>
         </Card>
+
+        {(orderBulks.length > 0 || bulkSessions.length > 0) && (
+          <Card bordered={false} style={{ marginBottom: 16 }} className="bulk-selector-card">
+            <Text strong style={{ display: "block", marginBottom: 12 }}>
+              Initial &amp; Bulk splits (kept separate)
+            </Text>
+            <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 12 }}>
+              Split the Initial archive when ready. Split each additional bulk later when its zip is uploaded — they are never mixed.
+            </Text>
+            <Row gutter={[12, 12]}>
+              {(orderBulks.length
+                ? orderBulks
+                : bulkSessions.map((s) => ({
+                    bulk_number: s.bulk_number,
+                    label: Number(s.bulk_number) === 1 ? "Initial" : `Bulk ${s.bulk_number}`,
+                    total_records: s.total_records,
+                    lottery_count: s.file_count,
+                  }))
+              ).map((ob) => {
+                const sess = bulkSessions.find(
+                  (s) => Number(s.bulk_number) === Number(ob.bulk_number)
+                );
+                const isActive = sess && sessionId === sess.session_id;
+                const isInitial = Number(ob.bulk_number) === 1;
+                return (
+                  <Col xs={24} sm={12} md={8} key={ob.bulk_number}>
+                    <Card
+                      size="small"
+                      style={{
+                        borderColor: isActive ? "#1677ff" : undefined,
+                        background: isActive ? "#f0f5ff" : undefined,
+                      }}
+                    >
+                      <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                        <Tag color={isInitial ? "blue" : "purple"}>
+                          {ob.label || (isInitial ? "Initial" : `Bulk ${ob.bulk_number}`)}
+                        </Tag>
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          Ordered: {Number(ob.total_records || 0).toLocaleString()} records
+                          {ob.lottery_count != null ? ` / ${ob.lottery_count} lottery(ies)` : ""}
+                        </Text>
+                        <Text style={{ fontSize: 12 }}>
+                          Upload:{" "}
+                          {sess ? (
+                            <Text type="success">Ready ({sess.file_count} files)</Text>
+                          ) : (
+                            <Text type="warning">Not uploaded yet</Text>
+                          )}
+                        </Text>
+                        <Button
+                          size="small"
+                          type={isActive ? "primary" : "default"}
+                          disabled={!sess}
+                          onClick={async () => {
+                            if (!sess) return;
+                            setSessionId(sess.session_id);
+                            try {
+                              const lotteryResponse = await getSessionLotteries(sess.session_id);
+                              const lotteryData = Array.isArray(lotteryResponse.data)
+                                ? lotteryResponse.data
+                                : [];
+                              setLotteries(
+                                [...lotteryData].sort((a, b) =>
+                                  getLotterySortKey(a).localeCompare(
+                                    getLotterySortKey(b),
+                                    undefined,
+                                    { sensitivity: "base" }
+                                  )
+                                )
+                              );
+                              // Re-validate and reload assignments for THIS bulk only
+                              const vRes = await validateUpload(selectedDate, {
+                                sessionId: sess.session_id,
+                              });
+                              setValidation(vRes.data || null);
+                              if (agent) {
+                                const aRes = await getAssignedCounts(agent, selectedDate, {
+                                  sessionId: sess.session_id,
+                                });
+                                const assignmentData = Array.isArray(aRes.data) ? aRes.data : [];
+                                setAssignedCounts(
+                                  [...assignmentData]
+                                    .sort((a, b) =>
+                                      getLotterySortKey(a).localeCompare(
+                                        getLotterySortKey(b),
+                                        undefined,
+                                        { sensitivity: "base" }
+                                      )
+                                    )
+                                    .map((item) => ({
+                                      ...item,
+                                      available_quantity: Number(item.available_quantity || 0),
+                                      assigned_count: Number(item.assigned_count || 0),
+                                    }))
+                                );
+                                await checkInitialSplit(selectedDate, agent, sess.session_id);
+                                try {
+                                  const rem = await getSpecialSplitsRemaining(agent, selectedDate);
+                                  const remainingData = rem.data?.remaining || [];
+                                  setRemainingCounts(
+                                    [...remainingData].sort((a, b) =>
+                                      getLotterySortKey(a).localeCompare(
+                                        getLotterySortKey(b),
+                                        undefined,
+                                        { sensitivity: "base" }
+                                      )
+                                    )
+                                  );
+                                } catch (e2) {
+                                  console.error(e2);
+                                }
+                              }
+                            } catch (e) {
+                              console.error(e);
+                            }
+                          }}
+                        >
+                          {isActive ? "Selected for split" : "Select to split"}
+                        </Button>
+                      </Space>
+                    </Card>
+                  </Col>
+                );
+              })}
+            </Row>
+          </Card>
+        )}
 
         {error && (
           <Alert
@@ -1483,7 +1840,7 @@ const SplitPage = () => {
                         title: "Lottery",
                         dataIndex: "lottery_name",
                         key: "lottery_name",
-                        width: 200,
+                        width: 180,
                         fixed: "left",
                         render: (value, record) => (
                           <div>
@@ -1507,8 +1864,19 @@ const SplitPage = () => {
                         ),
                       },
                       {
+                        title: "Bulk",
+                        dataIndex: "bulk_number",
+                        key: "bulk_number",
+                        width: 90,
+                        align: "center",
+                        fixed: "left",
+                        render: (value) => (
+                          <Tag color="purple">Bulk #{value || 1}</Tag>
+                        ),
+                      },
+                      {
                         title: (
-                          <Tooltip title="Initial count assigned to this agent">
+                          <Tooltip title="Initial count assigned to this agent for this bulk">
                             <span>Initial</span>
                           </Tooltip>
                         ),
@@ -1588,6 +1956,8 @@ const SplitPage = () => {
                     ]}
                     summary={() => {
                       if (!specialSplitMatrix.labels.length) return null;
+                      // Columns: 0 Lottery | 1 Bulk | 2 Initial | 3..(2 each) split groups | last Remaining
+                      const remainingIndex = 3 + specialSplitMatrix.labels.length * 2;
                       return (
                         <Table.Summary fixed>
                           <Table.Summary.Row>
@@ -1597,8 +1967,12 @@ const SplitPage = () => {
                               </Text>
                             </Table.Summary.Cell>
 
+                            {/* Bulk column — empty in totals */}
+                            <Table.Summary.Cell index={1} />
+
+                            {/* Initial total under Initial column */}
                             <Table.Summary.Cell
-                              index={1}
+                              index={2}
                               align="right"
                               className="split-group-start"
                             >
@@ -1613,12 +1987,12 @@ const SplitPage = () => {
                             {specialSplitMatrix.labels.map((label, idx) => (
                               <Table.Summary.Cell
                                 key={label}
-                                index={idx * 2 + 2}
+                                index={3 + idx * 2}
                                 colSpan={2}
                                 align="center"
                                 className="split-group-start"
                               >
-                                <Space direction="vertical" size={4}>
+                                <Space direction="vertical" size={4} style={{ width: "100%" }}>
                                   <Button
                                     type="primary"
                                     ghost
@@ -1653,7 +2027,7 @@ const SplitPage = () => {
                             ))}
 
                             <Table.Summary.Cell
-                              index={specialSplitMatrix.labels.length * 2 + 2}
+                              index={remainingIndex}
                               align="right"
                               className="split-group-start"
                             >
@@ -1714,7 +2088,7 @@ const SplitPage = () => {
         <Table
           style={{ marginTop: 12 }}
           rowKey="lottery_code"
-          dataSource={remainingCounts}
+          dataSource={remainingForSelectedBulk}
           pagination={false}
           size="small"
           columns={specialSplitColumns}
@@ -1908,7 +2282,7 @@ const SplitPage = () => {
           color: #531dab;
           font-weight: 700;
         }
-
+        /* Side-by-side / small laptop windows: stop pinning columns so the whole matrix can scroll */
         @media (max-width: 768px) {
           .split-page { padding: 0; }
           .split-header-card .ant-card-body { padding: 18px; }

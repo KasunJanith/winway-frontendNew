@@ -39,6 +39,7 @@ import Assignment from "./Pages/Assignment.js";
 import SplitPage from "./Pages/SplitPage.js";
 import UploadPage from "./Pages/UploadPage.js";
 import DownloadPage from "./Pages/DownloadPage.js";
+import SplitterSettings from "./Pages/SplitterSettings.js";
 
 import ResultUpload from "./Pages/ResultUpload.js";
 import ResultSplit from "./Pages/ResultSplit.js";
@@ -237,6 +238,8 @@ function App() {
               {activeTab === "10-2-3" && <UploadPage />}
               {activeTab === "10-2-4" && <SplitPage />}
               {activeTab === "10-2-5" && <DownloadPage />}
+              {activeTab === "10-4" && <SplitterSettings />}
+
 
               {/* Winning Result Management */}
               {activeTab === "10-3-1" && <ResultUpload />}

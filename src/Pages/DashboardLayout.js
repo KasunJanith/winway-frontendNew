@@ -211,6 +211,11 @@ const DashboardLayout = ({ activeTab, onTabChange, children, onLogout }) => {
           label: "Results",
           children: resultMenuItems,
         },
+        {
+          key: "10-4",
+          icon: <SettingOutlined />,
+          label: "Splitter Settings",
+        },
       ]);
     }
 
@@ -363,6 +368,9 @@ const DashboardLayout = ({ activeTab, onTabChange, children, onLogout }) => {
 
       case "/result-download":
         return "Result Download";
+
+      case "10-4":
+        return "Splitter Settings";
 
       case "11":
         return "System Users";

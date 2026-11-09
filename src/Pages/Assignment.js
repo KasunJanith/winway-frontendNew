@@ -58,7 +58,7 @@ const CountInput = ({ record, agent, disabled = false, onChange }) => (
         ? null
         : record.agent_counts?.[agent] ?? null
     }
-    onChange={(value) => onChange(record.lottery_code, agent, value)}
+    onChange={(value) => onChange(record.lottery_code, agent, value, record.bulk_number || 1)}
     style={{ width: 80 }}
   />
 );
@@ -220,21 +220,19 @@ const Assignment = () => {
       const response = await getAssignments(selectedDate);
       const assignmentData = Array.isArray(response.data) ? response.data : [];
 
-      const sortedData = [...assignmentData].sort((a, b) => {
-        const codeA = String(a.lottery_code || "").toLowerCase();
-        const codeB = String(b.lottery_code || "").toLowerCase();
-
-        const indexA = LOTTERY_ORDER.indexOf(codeA);
-        const indexB = LOTTERY_ORDER.indexOf(codeB);
-
-        const safeIndexA = indexA === -1 ? LOTTERY_ORDER.length : indexA;
-        const safeIndexB = indexB === -1 ? LOTTERY_ORDER.length : indexB;
-
-        return safeIndexA - safeIndexB;
-      });
+      const sortedData = [...assignmentData].sort((a, b) =>
+        String(a.lottery_name || a.lottery_code || "").localeCompare(
+          String(b.lottery_name || b.lottery_code || ""),
+          undefined,
+          { sensitivity: "base" }
+        ) || (Number(a.bulk_number || 1) - Number(b.bulk_number || 1))
+      );
 
       const normalizedData = sortedData.map((item) => ({
         ...item,
+        key: `${item.lottery_code}-bulk${item.bulk_number || 1}`,
+        bulk_number: item.bulk_number || 1,
+        bulk_label: item.bulk_label || (item.bulk_number === 1 ? "Initial" : `Bulk ${item.bulk_number}`),
         available_quantity: Number(item.available_quantity || 0),
         assignRemaining: Boolean(item.assignRemaining),
         agent_counts: {
@@ -260,12 +258,19 @@ const Assignment = () => {
     await loadData(formattedDate);
   };
 
-  const handleCountChange = (lotteryCode, agent, value) => {
+  const handleCountChange = (lotteryCode, agent, value, bulkNumber = 1) => {
+    const bn = Number(bulkNumber || 1);
     const count = Math.max(Number(value || 0), 0);
 
     setData((previousData) =>
       previousData.map((item) => {
-        if (item.lottery_code !== lotteryCode) return item;
+        // Only update the exact lottery + bulk row (Initial vs Bulk N stay independent)
+        if (
+          item.lottery_code !== lotteryCode ||
+          Number(item.bulk_number || 1) !== bn
+        ) {
+          return item;
+        }
 
         const updatedAgentCounts = {
           ...item.agent_counts,
@@ -286,10 +291,11 @@ const Assignment = () => {
     );
   };
 
-  const handleAssignRemainingToggle = (lotteryCode, checked) => {
+  const handleAssignRemainingToggle = (lotteryCode, checked, bulkNumber = 1) => {
+    const bn = bulkNumber || 1;
     setData((previousData) =>
       previousData.map((item) => {
-        if (item.lottery_code !== lotteryCode) return item;
+        if (item.lottery_code !== lotteryCode || Number(item.bulk_number || 1) !== Number(bn)) return item;
 
         const jayaCount = Number(item.agent_counts?.JAYAWAY || 0);
         const currentWinwayCount = Number(item.agent_counts?.WINWAY || 0);
@@ -390,6 +396,7 @@ const Assignment = () => {
           lottery_code: item.lottery_code,
           agent_name: agentName,
           count: Number(count || 0),
+          bulk_number: item.bulk_number || 1,
         });
       });
     });
@@ -514,6 +521,12 @@ const Assignment = () => {
               <Text type="secondary" style={{ fontSize: 12 }}>
                 {record.lottery_code}
               </Text>
+              <Tag
+                color={Number(record.bulk_number || 1) === 1 ? "blue" : "purple"}
+                style={{ marginLeft: 6, fontSize: 11 }}
+              >
+                {record.bulk_label || (Number(record.bulk_number || 1) === 1 ? "Initial" : `Bulk ${record.bulk_number}`)}
+              </Tag>
             </div>
           </div>
         </Space>

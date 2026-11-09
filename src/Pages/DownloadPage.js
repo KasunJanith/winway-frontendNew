@@ -32,6 +32,7 @@ import {
   downloadFile,
   downloadAgentZip,
   getLatestOrderDate,
+  listSessionsByDate,
 } from "./api/index";
 
 const { Title, Text } = Typography;
@@ -95,20 +96,32 @@ const normalizeLotteryCode = (value) => {
   return normalized;
 };
 
-const getLotterySortIndex = (value) => {
-  const normalizedCode = normalizeLotteryCode(value);
-  const index = LOTTERY_ORDER.indexOf(normalizedCode);
-
-  return index === -1 ? LOTTERY_ORDER.length : index;
+const getLotterySortKey = (item) => {
+  const code = normalizeLotteryCode(
+    typeof item === "object"
+      ? item?.lottery_code || item?.lottery_name || item?.code
+      : item
+  );
+  const name = String(
+    (typeof item === "object" &&
+      (item?.lottery_name || item?.displayName || item?.name)) ||
+      code
+  )
+    .trim()
+    .toLowerCase();
+  return name || code;
 };
 
 const SplitDownload = () => {
   const [selectedDate, setSelectedDate] = useState("");
   const [agent, setAgent] = useState("JAYAWAY");
   const [splits, setSplits] = useState([]);
+  const [bulkFilter, setBulkFilter] = useState("all");
+  const [dateSessions, setDateSessions] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [downloadingAll, setDownloadingAll] = useState(false);
+  const [downloadingBulk, setDownloadingBulk] = useState(null);
   const [downloadingFile, setDownloadingFile] = useState("");
   const [error, setError] = useState("");
 
@@ -161,28 +174,50 @@ const SplitDownload = () => {
     setError("");
 
     try {
-      const response = await getSplitsByDate(agentName, date);
+      let sessions = [];
+      try {
+        const listRes = await listSessionsByDate(date);
+        sessions = listRes.data?.sessions || [];
+      } catch (e) {
+        sessions = [];
+      }
+      setDateSessions(sessions);
 
+      const response = await getSplitsByDate(agentName, date);
       const splitData = Array.isArray(response.data) ? response.data : [];
 
-      const sortedSplits = [...splitData].sort((a, b) => {
-        const valueA = a.lottery_code || a.lottery_name;
-
-        const valueB = b.lottery_code || b.lottery_name;
-
-        return getLotterySortIndex(valueA) - getLotterySortIndex(valueB);
+      // Map session_id -> bulk_number from sessions list (authoritative)
+      const sessBulk = {};
+      sessions.forEach((s) => {
+        sessBulk[s.session_id] = Number(s.bulk_number || 1);
       });
 
-      setSplits(
-        sortedSplits.map((item) => ({
-          ...item,
-          record_count: Number(item.record_count || 0),
-        })),
-      );
+      const sortedSplits = [...splitData]
+        .map((item) => {
+          const bn = Number(
+            item.bulk_number ??
+              sessBulk[item.session_id] ??
+              1
+          );
+          return {
+            ...item,
+            record_count: Number(item.record_count || 0),
+            bulk_number: bn,
+          };
+        })
+        .sort((a, b) => {
+          if (a.bulk_number !== b.bulk_number) return a.bulk_number - b.bulk_number;
+          return getLotterySortKey(a).localeCompare(getLotterySortKey(b), undefined, {
+            sensitivity: "base",
+          });
+        });
+
+      setSplits(sortedSplits);
+      setBulkFilter("all");
     } catch (err) {
       console.error("Failed to load split files:", err);
-
       setSplits([]);
+      setDateSessions([]);
       setError(`Failed to load split files for ${agentName}.`);
     } finally {
       setLoading(false);
@@ -277,34 +312,49 @@ const SplitDownload = () => {
   };
 
   const downloadAllFiles = async () => {
-    if (!splits.length) return;
+    const rows = filteredSplits.length ? filteredSplits : splits;
+    if (!rows.length) return;
 
-    const sessionId = splits[0]?.session_id;
+    // Group by session/bulk and download each bulk ZIP separately
+    const bySession = {};
+    rows.forEach((r) => {
+      const sid = r.session_id;
+      if (!sid) return;
+      if (!bySession[sid]) {
+        bySession[sid] = { bulk: r.bulk_number || 1, rows: [] };
+      }
+      bySession[sid].rows.push(r);
+    });
 
-    if (!sessionId) {
+    const sessionIds = Object.keys(bySession);
+    if (!sessionIds.length) {
       messageApi.error("Session information is missing.");
-
       return;
     }
 
     setDownloadingAll(true);
-
     try {
-      const response = await downloadAgentZip(sessionId, agent);
-
-      saveBlobToDevice(response, `${agent}_splits_${selectedDate}.zip`);
-
-      messageApi.success(`${agent} split archive downloaded successfully.`);
+      for (const sid of sessionIds) {
+        const bulk = bySession[sid].bulk;
+        const response = await downloadAgentZip(sid, agent);
+        const name =
+          sessionIds.length > 1 || bulkFilter !== "all"
+            ? `${agent}_bulk${bulk}_splits_${selectedDate}.zip`
+            : `${agent}_splits_${selectedDate}.zip`;
+        saveBlobToDevice(response, name);
+      }
+      messageApi.success(
+        sessionIds.length > 1
+          ? `Downloaded ${sessionIds.length} bulk ZIP archives for ${agent}.`
+          : `${agent} split archive downloaded successfully.`
+      );
     } catch (err) {
       console.error("ZIP download failed:", err);
-
       const errorMessage =
         err.response?.data?.detail ||
         err.response?.data?.message ||
         "Failed to download the split archive.";
-
       messageApi.error(errorMessage);
-      throw err;
     } finally {
       setDownloadingAll(false);
     }
@@ -316,9 +366,40 @@ const SplitDownload = () => {
       return;
     }
 
-    if (!splits.length) {
-      messageApi.warning(`No split files are available for ${agent}.`);
+    if (!filteredSplits.length) {
+      messageApi.warning(
+        bulkFilter === "all"
+          ? `No split files are available for ${agent}.`
+          : `No split files for ${Number(bulkFilter) === 1 ? "Initial" : `Bulk ${bulkFilter}`}.`
+      );
       return;
+    }
+
+    // Single bulk selected → download only that bulk's ZIP
+    if (bulkFilter !== "all") {
+      const group = bulkGroups.find(
+        (g) => Number(g.bulk_number) === Number(bulkFilter)
+      );
+      if (group?.session_id) {
+        modalApi.confirm({
+          title: `Download ${group.label} for ${agent}?`,
+          icon: <FileZipOutlined style={{ color: "#722ed1" }} />,
+          centered: true,
+          content: (
+            <div style={{ marginTop: 16 }}>
+              <p>
+                <strong>{group.label}</strong> — {group.files} file(s),{" "}
+                {Number(group.records).toLocaleString()} records
+              </p>
+            </div>
+          ),
+          okText: "Download ZIP",
+          onOk: async () => {
+            await downloadOneBulk(group);
+          },
+        });
+        return;
+      }
     }
 
     modalApi.confirm({
@@ -331,17 +412,17 @@ const SplitDownload = () => {
           <p style={{ marginBottom: 8 }}>
             Agent: <strong>{agent}</strong>
           </p>
-
           <p style={{ marginBottom: 8 }}>
             Date: <strong>{dayjs(selectedDate).format("DD MMMM YYYY")}</strong>
           </p>
-
           <p style={{ marginBottom: 8 }}>
-            Files: <strong>{splits.length}</strong>
+            Scope: <strong>Both (Initial + all bulks)</strong>
           </p>
-
+          <p style={{ marginBottom: 8 }}>
+            Files: <strong>{filteredSplits.length}</strong>
+          </p>
           <p style={{ marginBottom: 0 }}>
-            Total records: <strong>{totalRecords.toLocaleString()}</strong>
+            Total records: <strong>{filteredRecords.toLocaleString()}</strong>
           </p>
         </div>
       ),
@@ -360,18 +441,99 @@ const SplitDownload = () => {
     );
   }, [splits]);
 
+
+  const bulkOptions = useMemo(() => {
+    const set = new Set(splits.map((s) => Number(s.bulk_number || 1)));
+    return ["all", ...[...set].sort((a, b) => a - b)];
+  }, [splits]);
+
+  const bulkGroups = useMemo(() => {
+    const map = {};
+    // Prefer sessions for the date so every uploaded bulk appears in the filter
+    (dateSessions || []).forEach((s) => {
+      const bn = Number(s.bulk_number || 1);
+      const sid = s.session_id;
+      const key = sid || `bulk-${bn}`;
+      map[key] = {
+        key,
+        session_id: sid,
+        bulk_number: bn,
+        label: bn === 1 ? "Initial" : `Bulk ${bn}`,
+        files: 0,
+        records: 0,
+      };
+    });
+    splits.forEach((s) => {
+      const bn = Number(s.bulk_number || 1);
+      const sid = s.session_id;
+      const key = sid || `bulk-${bn}`;
+      if (!map[key]) {
+        map[key] = {
+          key,
+          session_id: sid,
+          bulk_number: bn,
+          label: bn === 1 ? "Initial" : `Bulk ${bn}`,
+          files: 0,
+          records: 0,
+        };
+      }
+      map[key].files += 1;
+      map[key].records += Number(s.record_count || 0);
+      if (sid) map[key].session_id = sid;
+    });
+    return Object.values(map).sort((a, b) => a.bulk_number - b.bulk_number);
+  }, [splits, dateSessions]);
+
+  const filteredSplits = useMemo(() => {
+    if (bulkFilter === "all" || bulkFilter === "" || bulkFilter == null) {
+      return splits;
+    }
+    const want = Number(bulkFilter);
+    return splits.filter((s) => Number(s.bulk_number) === want);
+  }, [splits, bulkFilter]);
+
+  const filteredRecords = useMemo(
+    () => filteredSplits.reduce((t, i) => t + Number(i.record_count || 0), 0),
+    [filteredSplits]
+  );
+
   const totalSerialRange = useMemo(() => {
-    return splits.reduce((total, item) => {
+    return filteredSplits.reduce((total, item) => {
       const start = Number(item.start_serial || 0);
       const end = Number(item.end_serial || 0);
-
-      if (Number.isNaN(start) || Number.isNaN(end) || end < start) {
-        return total;
-      }
-
+      if (Number.isNaN(start) || Number.isNaN(end) || end < start) return total;
       return total + (end - start + 1);
     }, 0);
-  }, [splits]);
+  }, [filteredSplits]);
+
+
+  const downloadOneBulk = async (group) => {
+    if (!group?.session_id) {
+      messageApi.error("Session missing for this bulk.");
+      return;
+    }
+    setDownloadingBulk(group.bulk_number);
+    try {
+      const response = await downloadAgentZip(group.session_id, agent);
+      const label = group.bulk_number === 1 ? "Initial" : `Bulk${group.bulk_number}`;
+      saveBlobToDevice(
+        response,
+        `${agent}_${label}_splits_${selectedDate}.zip`
+      );
+      messageApi.success(
+        `${group.label} ZIP downloaded for ${agent} (${group.files} files).`
+      );
+    } catch (err) {
+      console.error(err);
+      messageApi.error(
+        err.response?.data?.detail ||
+          err.response?.data?.message ||
+          `Failed to download ${group.label} ZIP.`
+      );
+    } finally {
+      setDownloadingBulk(null);
+    }
+  };
 
 const columns = [
   {
@@ -383,7 +545,20 @@ const columns = [
       <Text type="secondary">{index + 1}</Text>
     ),
   },
-
+  {
+    title: "Bulk",
+    key: "bulk_number",
+    width: 90,
+    align: "center",
+    render: (_, record) => {
+      const bn = Number(record.bulk_number || 1);
+      return (
+        <Tag color={bn === 1 ? "blue" : "purple"}>
+          {bn === 1 ? "Initial" : `Bulk ${bn}`}
+        </Tag>
+      );
+    },
+  },
   {
     title: "Lottery / Draw",
     key: "lottery",
@@ -681,7 +856,7 @@ const columns = [
             >
               <Statistic
                 title="Split Files"
-                value={splits.length}
+                value={filteredSplits.length}
                 prefix={<DatabaseOutlined style={{ color: "#1677ff" }} />}
                 valueStyle={{ fontWeight: 700 }}
               />
@@ -699,7 +874,7 @@ const columns = [
             >
               <Statistic
                 title="Total Records"
-                value={totalRecords}
+                value={filteredRecords}
                 prefix={<DatabaseOutlined style={{ color: "#722ed1" }} />}
                 valueStyle={{ fontWeight: 700 }}
               />
@@ -752,7 +927,7 @@ const columns = [
           </Col>
         </Row>
 
-        <Card
+                <Card
           title={
             <Space>
               <CloudDownloadOutlined style={{ color: "#1677ff" }} />
@@ -760,20 +935,36 @@ const columns = [
             </Space>
           }
           extra={
-            <Button
-              type="primary"
-              icon={<FileZipOutlined />}
-              loading={downloadingAll}
-              disabled={
-                loading || downloadingFile !== "" || splits.length === 0
-              }
-              onClick={handleDownloadAll}
-              style={{
-                background: "#722ed1",
-              }}
-            >
-              Download All as ZIP
-            </Button>
+            <Space wrap size="middle">
+              {bulkGroups.length > 0 && (
+                <Select
+                  value={String(bulkFilter)}
+                  onChange={(v) => setBulkFilter(v === "all" ? "all" : Number(v))}
+                  style={{ width: 160 }}
+                  options={[
+                    { value: "all", label: "Both" },
+                    ...bulkGroups.map((g) => ({
+                      value: String(g.bulk_number),
+                      label: g.label,
+                    })),
+                  ]}
+                />
+              )}
+              <Button
+                type="primary"
+                icon={<FileZipOutlined />}
+                loading={downloadingAll || downloadingBulk != null}
+                disabled={
+                  loading || downloadingFile !== "" || filteredSplits.length === 0
+                }
+                onClick={handleDownloadAll}
+                style={{
+                  background: "#722ed1",
+                }}
+              >
+                Download All as ZIP
+              </Button>
+            </Space>
           }
           bordered={false}
           style={{
@@ -790,9 +981,10 @@ const columns = [
               }-${index}`
             }
             columns={columns}
-            dataSource={splits}
+            dataSource={filteredSplits}
             loading={loading}
             pagination={false}
+            scroll={{ x: 900 }}
          
             locale={{
               emptyText: (
@@ -800,16 +992,16 @@ const columns = [
                   image={Empty.PRESENTED_IMAGE_SIMPLE}
                   description={
                     selectedDate
-                      ? `No split files found for ${agent} on ${dayjs(
-                          selectedDate,
-                        ).format("DD MMM YYYY")}`
+                      ? bulkFilter !== "all"
+                        ? `No ${Number(bulkFilter) === 1 ? "Initial" : `Bulk ${bulkFilter}`} split files for ${agent} on ${dayjs(selectedDate).format("DD MMM YYYY")}. Split that bulk on the Split page first.`
+                        : `No split files found for ${agent} on ${dayjs(selectedDate).format("DD MMM YYYY")}`
                       : "Select a date and agent"
                   }
                 />
               ),
             }}
             summary={() =>
-              splits.length > 0 ? (
+              filteredSplits.length > 0 ? (
                 <Table.Summary fixed>
                   <Table.Summary.Row>
                     <Table.Summary.Cell index={0} />
@@ -825,7 +1017,7 @@ const columns = [
                     <Table.Summary.Cell index={4} />
 
                     <Table.Summary.Cell index={5} align="right">
-                      <Text strong>{totalRecords.toLocaleString()}</Text>
+                      <Text strong>{filteredRecords.toLocaleString()}</Text>
                     </Table.Summary.Cell>
 
                     <Table.Summary.Cell index={6} />

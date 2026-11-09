@@ -17,6 +17,8 @@ import {
   Tag,
   Typography,
   Upload,
+  Checkbox,
+  Select,
 } from "antd";
 import {
   CalendarOutlined,
@@ -34,21 +36,43 @@ import {
   getSessionByDate,
   getSessionLotteries,
   getLatestOrderDate,
+  listSessionsByDate,
+  getOrderBulks,
 } from "./api/index";
+
+import {
+  loadConfig,
+  isValidationEnabled,
+} from "../config/splitterConfig";
 
 const { Title, Text, Paragraph } = Typography;
 const { Dragger } = Upload;
 
-const LOTTERY_ORDER = [
-  "ada",
-  "dana",
-  "govi",
-  "hada",
-  "maha",
-  "mgap",
-  "jaya",
-  "suba",
-];
+// Load active lotteries from settings (falls back to defaults)
+const getLotterySortKey = (item) => {
+  const code = String(
+    (typeof item === "object"
+      ? item?.lottery_code || item?.lottery_name || item?.code
+      : item) || ""
+  )
+    .trim()
+    .toLowerCase();
+  const name = String(
+    (typeof item === "object" && (item?.lottery_name || item?.displayName || item?.name)) ||
+      code
+  )
+    .trim()
+    .toLowerCase();
+  return name || code;
+};
+
+const getActiveLotteryOrder = () => {
+  const cfg = loadConfig();
+  return (cfg.lotteries || [])
+    .filter((l) => l.active !== false)
+    .map((l) => l.code);
+};
+
 
 const normalizeLotteryCode = (value) => {
   const normalized = String(value || "")
@@ -107,9 +131,13 @@ const UploadPage = () => {
   const [fileList, setFileList] = useState([]);
 
   const [uploading, setUploading] = useState(false);
+  const [isBulk, setIsBulk] = useState(false);
+  const [selectedBulkNumber, setSelectedBulkNumber] = useState(2);
   const [loadingSession, setLoadingSession] = useState(true);
 
   const [sessionId, setSessionId] = useState(null);
+  const [bulkSessions, setBulkSessions] = useState([]);
+  const [orderBulks, setOrderBulks] = useState([]);
   const [lotteries, setLotteries] = useState([]);
   const [error, setError] = useState("");
 
@@ -156,51 +184,85 @@ const UploadPage = () => {
     setError("");
 
     try {
-      const sessionResponse = await getSessionByDate(date);
-      const foundSessionId = sessionResponse.data?.session_id;
+      try {
+        const bulkRes = await getOrderBulks(date);
+        setOrderBulks(bulkRes.data?.bulks || []);
+      } catch (e) {
+        setOrderBulks([]);
+      }
 
-      if (!foundSessionId) {
-        setSessionId(null);
-        setLotteries([]);
+      let sessions = [];
+      try {
+        const listRes = await listSessionsByDate(date);
+        sessions = listRes.data?.sessions || [];
+      } catch (e) {
+        sessions = [];
+      }
+
+      // Sort each bulk's lotteries alphabetically
+      sessions = sessions.map((s) => ({
+        ...s,
+        lotteries: [...(s.lotteries || [])].sort((a, b) =>
+          getLotterySortKey(a).localeCompare(getLotterySortKey(b), undefined, {
+            sensitivity: "base",
+          })
+        ),
+      }));
+      setBulkSessions(sessions);
+
+      if (!sessions.length) {
+        // Fallback to single session API
+        const sessionResponse = await getSessionByDate(date);
+        const foundSessionId = sessionResponse.data?.session_id;
+        if (!foundSessionId) {
+          setSessionId(null);
+          setLotteries([]);
+          return;
+        }
+        setSessionId(foundSessionId);
+        const lotteryResponse = await getSessionLotteries(foundSessionId);
+        const lotteryData = Array.isArray(lotteryResponse.data)
+          ? lotteryResponse.data
+          : [];
+        const sortedLotteries = [...lotteryData].sort((a, b) =>
+          getLotterySortKey(a).localeCompare(getLotterySortKey(b), undefined, {
+            sensitivity: "base",
+          })
+        );
+        setLotteries(sortedLotteries);
         return;
       }
 
-      setSessionId(foundSessionId);
-
-      const lotteryResponse =
-        await getSessionLotteries(foundSessionId);
-
-      const lotteryData = Array.isArray(lotteryResponse.data)
-        ? lotteryResponse.data
-        : [];
-
-      const sortedLotteries = [...lotteryData].sort((a, b) => {
-        const codeA = normalizeLotteryCode(
-          a.lottery_code || a.lottery_name,
-        );
-
-        const codeB = normalizeLotteryCode(
-          b.lottery_code || b.lottery_name,
-        );
-
-        const indexA = LOTTERY_ORDER.indexOf(codeA);
-        const indexB = LOTTERY_ORDER.indexOf(codeB);
-
-        const safeIndexA =
-          indexA === -1 ? LOTTERY_ORDER.length : indexA;
-
-        const safeIndexB =
-          indexB === -1 ? LOTTERY_ORDER.length : indexB;
-
-        return safeIndexA - safeIndexB;
+      // Latest bulk as "active" session
+      const latest = sessions[sessions.length - 1];
+      setSessionId(latest.session_id);
+      // Flatten all lottery rows across bulks for summary stats (tag with bulk)
+      const allRows = [];
+      sessions.forEach((s) => {
+        (s.lotteries || []).forEach((lf) => {
+          allRows.push({
+            ...lf,
+            bulk_number: s.bulk_number,
+            session_id: s.session_id,
+            bulk_filename: s.original_filename,
+          });
+        });
       });
-
-      setLotteries(sortedLotteries);
+      allRows.sort((a, b) => {
+        const byName = getLotterySortKey(a).localeCompare(
+          getLotterySortKey(b),
+          undefined,
+          { sensitivity: "base" }
+        );
+        if (byName !== 0) return byName;
+        return (a.bulk_number || 1) - (b.bulk_number || 1);
+      });
+      setLotteries(allRows);
     } catch (err) {
       console.error("Failed to load upload session:", err);
-
       setSessionId(null);
       setLotteries([]);
+      setBulkSessions([]);
     } finally {
       setLoadingSession(false);
     }
@@ -224,26 +286,32 @@ const UploadPage = () => {
       .pop()
       ?.toLowerCase();
 
-    const validExtension =
-      extension === "zip" || extension === "rar";
+    // Validation: require ZIP or RAR (can be toggled in Splitter Settings)
+    if (isValidationEnabled("requireArchiveExtension")) {
+      const validExtension =
+        extension === "zip" || extension === "rar";
 
-    if (!validExtension) {
-      messageApi.error(
-        "Only ZIP and RAR archive files are allowed.",
-      );
+      if (!validExtension) {
+        messageApi.error(
+          "Only ZIP and RAR archive files are allowed.",
+        );
 
-      return Upload.LIST_IGNORE;
+        return Upload.LIST_IGNORE;
+      }
     }
 
-    const isBelowLimit =
-      selectedFile.size / 1024 / 1024 <= 100;
+    // Validation: enforce 100 MB size limit (can be toggled in Splitter Settings)
+    if (isValidationEnabled("requireFileSizeLimit")) {
+      const isBelowLimit =
+        selectedFile.size / 1024 / 1024 <= 100;
 
-    if (!isBelowLimit) {
-      messageApi.error(
-        "Archive file must be smaller than 100 MB.",
-      );
+      if (!isBelowLimit) {
+        messageApi.error(
+          "Archive file must be smaller than 100 MB.",
+        );
 
-      return Upload.LIST_IGNORE;
+        return Upload.LIST_IGNORE;
+      }
     }
 
     setFileList([selectedFile]);
@@ -286,10 +354,21 @@ const UploadPage = () => {
     setError("");
 
     try {
-      await uploadArchive(selectedFile, selectedDate);
+      const targetBulk = isBulk
+        ? (selectedBulkNumber || (orderBulks.find((b) => b.bulk_number > 1)?.bulk_number) || 2)
+        : 1;
+      const uploadRes = await uploadArchive(selectedFile, selectedDate, {
+        isBulk: targetBulk > 1,
+        bulkNumber: targetBulk,
+      });
+      const data = uploadRes?.data || uploadRes || {};
+      const wasMerged = Boolean(data.merged);
+      const totalNow = data.total_lotteries;
 
       messageApi.success({
-        content: "Archive uploaded successfully.",
+        content: wasMerged
+          ? `Files merged into existing session${totalNow != null ? ` (${totalNow} lottery file(s) total)` : ""}.`
+          : "Archive uploaded successfully.",
         icon: (
           <CheckCircleOutlined
             style={{ color: "#52c41a" }}
@@ -303,15 +382,27 @@ const UploadPage = () => {
     } catch (err) {
       console.error("Archive upload failed:", err);
 
-      const errorMessage =
+      // FastAPI may return detail as string or list of validation errors
+      let errorMessage =
         err.response?.data?.detail ||
         err.response?.data?.message ||
+        err.message ||
         "Upload failed. Please check the archive and try again.";
 
-      setError(errorMessage);
-      messageApi.error(errorMessage);
+      if (Array.isArray(errorMessage)) {
+        errorMessage = errorMessage
+          .map((e) => (typeof e === "object" ? e.msg || JSON.stringify(e) : String(e)))
+          .join("; ");
+      }
 
-      throw err;
+      setError(String(errorMessage));
+      messageApi.error({
+        content: String(errorMessage),
+        duration: 8,
+      });
+
+      // Do NOT rethrow — avoids React "Uncaught runtime errors" overlay
+      // and lets the Modal close cleanly after the user sees the message.
     } finally {
       setUploading(false);
     }
@@ -364,10 +455,14 @@ const UploadPage = () => {
 
           {sessionId && (
             <Alert
-              type="warning"
+              type="info"
               showIcon
               message="An archive already exists for this date"
-              description="Uploading a new archive may replace or update the current session data."
+              description={
+                isValidationEnabled("requireExactFileCount")
+                  ? "Uploading a new archive will create a new session for this date."
+                  : "Exact file count is OFF — new files will be merged into the existing session (missing lotteries can be added later)."
+              }
               style={{ marginTop: 16 }}
             />
           )}
@@ -392,10 +487,10 @@ const UploadPage = () => {
   const uploadedFileCount = lotteries.length;
 
   const completeArchive =
-    uploadedFileCount === LOTTERY_ORDER.length;
+    uploadedFileCount === getActiveLotteryOrder().length;
 
   const uploadProgress = Math.min(
-    (uploadedFileCount / LOTTERY_ORDER.length) * 100,
+    (uploadedFileCount / getActiveLotteryOrder().length) * 100,
     100,
   );
 
@@ -403,10 +498,19 @@ const UploadPage = () => {
     {
       title: "#",
       key: "index",
-      width: 65,
+      width: 50,
       align: "center",
       render: (_, __, index) => (
         <Text type="secondary">{index + 1}</Text>
+      ),
+    },
+    {
+      title: "Bulk",
+      key: "bulk_number",
+      width: 90,
+      align: "center",
+      render: (_, record) => (
+        <Tag color="blue">Bulk #{record.bulk_number || 1}</Tag>
       ),
     },
     {
@@ -617,7 +721,7 @@ const UploadPage = () => {
               <Statistic
                 title="Uploaded DBF Files"
                 value={uploadedFileCount}
-                suffix={`/ ${LOTTERY_ORDER.length}`}
+                suffix={`/ ${getActiveLotteryOrder().length}`}
                 prefix={
                   <FileZipOutlined
                     style={{ color: "#1677ff" }}
@@ -722,11 +826,31 @@ const UploadPage = () => {
             description={
               <div>
                 <div>
-                  The archive must contain exactly eight
-                  DBF files.
+                  The archive must contain{" "}
+                  {isValidationEnabled("requireExactFileCount") ? (
+                    <>
+                      exactly <strong>{getActiveLotteryOrder().length}</strong> DBF
+                      files (one per active lottery).
+                    </>
+                  ) : (
+                    <>
+                      DBF files for the lotteries being processed (exact
+                      count check is currently{" "}
+                      <strong>disabled</strong> in Splitter Settings).
+                    </>
+                  )}
                 </div>
 
-                <div>
+                <div style={{ marginTop: 6 }}>
+                  DBF filenames are matched{" "}
+                  <strong>case-insensitively</strong> by prefix — e.g.{" "}
+                  <Text code>jaya0595.DBF</Text>,{" "}
+                  <Text code>JAYA0595.dbf</Text>, and{" "}
+                  <Text code>Jaya0595.dbf</Text> are all accepted.{" "}
+                  The <strong>draw number must be exact</strong>.
+                </div>
+
+                <div style={{ marginTop: 6 }}>
                   Example DBF filename:{" "}
                   <Text code>ada0786.dbf</Text>
                 </div>
@@ -742,7 +866,72 @@ const UploadPage = () => {
             style={{ marginBottom: 20 }}
           />
 
-          <Dragger
+          
+          {orderBulks.filter((b) => b.bulk_number > 1).length > 0 && (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message="Additional bulk orders exist for this date"
+              description={
+                <div>
+                  {orderBulks
+                    .filter((b) => b.bulk_number > 1)
+                    .map((b) => {
+                      const uploaded = bulkSessions.some(
+                        (s) => Number(s.bulk_number) === Number(b.bulk_number)
+                      );
+                      return (
+                        <div key={b.bulk_number}>
+                          <Tag color={uploaded ? "green" : "orange"}>
+                            {b.label}
+                          </Tag>{" "}
+                          {b.lottery_count} lottery(ies),{" "}
+                          {Number(b.total_records || 0).toLocaleString()} records —{" "}
+                          {uploaded ? "uploaded" : "awaiting upload"}
+                        </div>
+                      );
+                    })}
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    Upload the Initial archive first. Upload each bulk when you receive it.
+                  </Text>
+                </div>
+              }
+            />
+          )}
+          <div style={{ marginBottom: 12 }}>
+            <Checkbox
+              checked={isBulk}
+              onChange={(e) => setIsBulk(e.target.checked)}
+            >
+              <Text strong>This is a bulk (additional) shipment — not the initial archive</Text>
+            </Checkbox>
+            {isBulk && (
+              <div style={{ marginTop: 8 }}>
+                <Text type="secondary" style={{ marginRight: 8 }}>
+                  Order bulk to match:
+                </Text>
+                <Select
+                  style={{ width: 160 }}
+                  value={selectedBulkNumber}
+                  onChange={setSelectedBulkNumber}
+                  options={(orderBulks.filter((b) => b.bulk_number > 1).length
+                    ? orderBulks.filter((b) => b.bulk_number > 1)
+                    : [{ bulk_number: 2, label: "Bulk 2" }]
+                  ).map((b) => ({
+                    value: b.bulk_number,
+                    label: b.label || `Bulk ${b.bulk_number}`,
+                  }))}
+                />
+              </div>
+            )}
+            <div>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Initial upload = bulk 1. Bulk uploads are stored and split separately from the initial archive.
+              </Text>
+            </div>
+          </div>
+<Dragger
             accept=".zip,.rar"
             multiple={false}
             maxCount={1}
@@ -866,7 +1055,7 @@ const UploadPage = () => {
                 <div style={{ marginTop: 4 }}>
                   <Text type="secondary">
                     {uploadedFileCount} of{" "}
-                    {LOTTERY_ORDER.length} DBF files
+                    {getActiveLotteryOrder().length} DBF files
                     detected
                   </Text>
                 </div>
